@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PASSENGER
+  DRIVER
+  OPERATOR
+  ADMIN
+  INSPECTOR
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum DriverVerificationStatus {
+  REGISTERED
+  PENDING_VERIFICATION
+  VERIFIED
+  SUSPENDED
+  EXPIRED
+}
+
+enum DriverAvailability {
+  AVAILABLE
+  ON_TRIP
+  NOT_AVAILABLE
+}
+
+enum VehicleType {
+  BUS
+  MINIBUS
+  TAXI
+  PUBLIC_TRANSPORT
+  CAR
+  BOAT
+  FERRY
+}
+
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  SUSPENDED
+}
+
+enum TripStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingStatus {
+  REQUESTED
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum TouristServiceType {
+  AIRPORT_TRANSFER
+  CRUISE_TRANSFER
+  POINT_TO_POINT
+  SIGHTSEEING_TRIP
+  HALF_DAY_TOUR
+  FULL_DAY_TOUR
+  CUSTOM_ITINERARY
+}
+
+enum TouristRequestStatus {
+  REQUESTED
+  QUOTED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  DECLINED
+}
+
+enum TouristQuoteStatus {
+  SENT
+  ACCEPTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum CashPaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+model User {
+  id           String   @id @default(cuid())
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  phone        String   @unique
+  email        String?  @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(PASSENGER)
+  status       UserStatus @default(ACTIVE)
+  driver       Driver?
+  vehicles     Vehicle[] @relation("VehicleOwner")
+  trips        Trip[] @relation("TripDriver")
+  bookings     Booking[]
+  bookingsAsDriver Booking[] @relation("BookingDriver")
+  passwordResetTokens PasswordResetToken[]
+  touristServiceProfile TouristServiceProfile?
+  touristRequestsAsPassenger TouristRequest[] @relation("TouristRequester")
+  touristRequestsAsDriver TouristRequest[] @relation("TouristAssignedDriver")
+  touristQuotes TouristQuote[]
+  touristBookingsAsDriver TouristBooking[] @relation("TouristBookingDriver")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model TouristServiceProfile {
+  id                 String              @id @default(cuid())
+  driverId           String              @unique @map("driver_id")
+  approved           Boolean             @default(false)
+  enabled            Boolean             @default(false)
+  serviceArea        String              @default("Port Vila") @map("service_area")
+  languages          String[]            @default([])
+  serviceTypes       TouristServiceType[] @default([]) @map("service_types")
+  pricingDescription String?             @map("pricing_description")
+  availableFrom      DateTime?           @map("available_from")
+  availableUntil     DateTime?           @map("available_until")
+  approvedAt         DateTime?           @map("approved_at")
+  driver             User                @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicles           Vehicle[]
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  @@map("tourist_service_profiles")
+}
+
+model TouristDestination {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  island      String   @default("Efate")
+  description String?
+  active      Boolean  @default(true)
+  requests    TouristRequestStop[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("tourist_destinations")
+}
+
+model TouristRequest {
+  id                String   @id @default(cuid())
+  reference         String   @unique @map("guest_reference")
+  accessTokenHash   String   @map("access_token_hash")
+  requesterId       String?  @map("requester_id")
+  assignedDriverId  String   @map("assigned_driver_id")
+  assignedVehicleId String?  @map("assigned_vehicle_id")
+  requesterName     String   @map("requester_name")
+  contactEmail      String?  @map("contact_email")
+  contactPhone      String   @map("contact_phone")
+  serviceType       TouristServiceType @map("service_type")
+  pickupLocation    String   @map("pickup_location")
+  travelAt          DateTime @map("travel_at")
+  passengerCount    Int      @map("passenger_count")
+  luggageCount      Int      @default(0) @map("luggage_count")
+  flightNumber      String?  @map("flight_number")
+  cruiseShipName    String?  @map("cruise_ship_name")
+  specialRequests   String?  @map("special_requests")
+  status            TouristRequestStatus @default(REQUESTED)
+  expiresAt         DateTime @map("expires_at")
+  requester         User?    @relation("TouristRequester", fields: [requesterId], references: [id], onDelete: SetNull)
+  assignedDriver    User     @relation("TouristAssignedDriver", fields: [assignedDriverId], references: [id])
+  assignedVehicle   Vehicle? @relation(fields: [assignedVehicleId], references: [id], onDelete: SetNull)
+  stops             TouristRequestStop[]
+  quotes            TouristQuote[]
+  booking           TouristBooking?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([assignedDriverId, status, travelAt])
+  @@map("tourist_requests")
+}
+
+model TouristRequestStop {
+  id            String   @id @default(cuid())
+  requestId     String   @map("request_id")
+  destinationId String?  @map("destination_id")
+  name          String
+  sequence      Int
+  request       TouristRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  destination   TouristDestination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+
+  @@unique([requestId, sequence])
+  @@map("tourist_request_stops")
+}
+
+model TouristQuote {
+  id                String   @id @default(cuid())
+  requestId         String   @map("request_id")
+  driverId          String   @map("driver_id")
+  vehicleId         String   @map("vehicle_id")
+  amount            Decimal  @db.Decimal(12, 2)
+  currency          String   @default("VUV")
+  durationHours     Decimal  @db.Decimal(4, 1) @map("duration_hours")
+  includedServices  String[] @default([]) @map("included_services")
+  excludedServices  String[] @default([]) @map("excluded_services")
+  waitingTerms      String?  @map("waiting_terms")
+  cancellationTerms String?  @map("cancellation_terms")
+  expiresAt         DateTime @map("expires_at")
+  status            TouristQuoteStatus @default(SENT)
+  request           TouristRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  driver            User     @relation(fields: [driverId], references: [id])
+  vehicle           Vehicle  @relation(fields: [vehicleId], references: [id])
+  booking           TouristBooking?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([requestId, status])
+  @@map("tourist_quotes")
+}
+
+model TouristBooking {
+  id            String   @id @default(cuid())
+  requestId     String   @unique @map("request_id")
+  quoteId       String   @unique @map("quote_id")
+  driverId      String   @map("driver_id")
+  vehicleId     String   @map("vehicle_id")
+  startAt       DateTime @map("start_at")
+  endAt         DateTime @map("end_at")
+  status        TouristRequestStatus @default(CONFIRMED)
+  paymentStatus CashPaymentStatus @default(UNPAID) @map("payment_status")
+  paidAmount    Decimal  @default(0) @db.Decimal(12, 2) @map("paid_amount")
+  request       TouristRequest @relation(fields: [requestId], references: [id])
+  quote         TouristQuote @relation(fields: [quoteId], references: [id])
+  driver        User     @relation("TouristBookingDriver", fields: [driverId], references: [id])
+  vehicle       Vehicle  @relation(fields: [vehicleId], references: [id])
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([driverId, startAt, endAt])
+  @@index([vehicleId, startAt, endAt])
+  @@map("tourist_bookings")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  codeHash  String   @map("code_hash")
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_reset_tokens")
+}
+
+model Driver {
+        
+  id                   String @id @default(cuid())
+  userId               String @unique @map("user_id")
+  licenceNumber        String? @unique @map("licence_number")
+  licenceExpiry        DateTime? @map("licence_expiry")
+  verificationStatus   DriverVerificationStatus @default(REGISTERED) @map("verification_status")
+  availability         DriverAvailability @default(NOT_AVAILABLE)
+  user                 User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("drivers")
+}
+
+model Vehicle {
+  id                   String @id @default(cuid())
+  ownerId              String @map("owner_id")
+  registrationNumber   String @unique @map("registration_number")
+  vehicleType          VehicleType @map("vehicle_type")
+  make                 String?
+  model                String?
+  year                 Int?
+  capacity             Int?
+  status               VehicleStatus @default(ACTIVE)
+  owner                User @relation("VehicleOwner", fields: [ownerId], references: [id])
+  trips                Trip[]
+  touristServiceProfileId String? @map("tourist_service_profile_id")
+  touristCapacity      Int? @map("tourist_capacity")
+  luggageCapacity      Int? @map("luggage_capacity")
+  touristServiceProfile TouristServiceProfile? @relation(fields: [touristServiceProfileId], references: [id], onDelete: SetNull)
+  touristRequests      TouristRequest[]
+  touristQuotes        TouristQuote[]
+  touristBookings      TouristBooking[]
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("vehicles")
+}
+
+model Route {
+  id           String @id @default(cuid())
+  name        String
+  origin      String
+  destination String
+  description String?
+  active      Boolean @default(true)
+  stops       Stop[]
+  trips       Trip[]
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("routes")
+}
+
+model Stop {
+  id        String @id @default(uuid())
+  routeId   String @map("route_id")
+  name      String
+  latitude  Decimal @db.Decimal(10, 7)
+  longitude Decimal @db.Decimal(10, 7)
+  sequence  Int
+  route     Route @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  pickups   Booking[] @relation("PickupStop")
+  dropoffs  Booking[] @relation("DropoffStop")
+
+  @@unique([routeId, sequence])
+  @@map("stops")
+}
+
+model Trip {
+  id              String @id @default(cuid())
+  routeId         String @map("route_id")
+  driverId        String @map("driver_id")
+  vehicleId       String @map("vehicle_id")
+  status          TripStatus @default(PLANNED)
+  startTime       DateTime? @map("start_time")
+  endTime         DateTime? @map("end_time")
+  currentLatitude Decimal? @db.Decimal(10, 7) @map("current_latitude")
+  currentLongitude Decimal? @db.Decimal(10, 7) @map("current_longitude")
+  departureTime   String @default("Departing Soon") @map("departure_time")
+  durationMinutes Int @default(30) @map("duration_minutes")
+  fare            Decimal @default(150) @db.Decimal(12, 2)
+  currency        String @default("VUV")
+  totalSeats      Int @default(14) @map("total_seats")
+  availableSeats  Int @default(14) @map("available_seats")
+  stopNames       String[] @default([]) @map("stop_names")
+  notes           String?
+  route           Route @relation(fields: [routeId], references: [id])
+  driver          User @relation("TripDriver", fields: [driverId], references: [id])
+  vehicle         Vehicle @relation(fields: [vehicleId], references: [id])
+  bookings        Booking[]
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("trips")
+}
+
+model Booking {
+  id            String @id @default(cuid())
+  passengerId   String @map("passenger_id")
+  tripId        String? @map("trip_id")
+  driverId      String @map("driver_id")
+  pickupStopId  String? @map("pickup_stop_id")
+  dropoffStopId String? @map("dropoff_stop_id")
+  pickupLocation String? @map("pickup_location")
+  dropoffLocation String? @map("dropoff_location")
+  status        BookingStatus @default(REQUESTED)
+  fare          Decimal? @db.Decimal(12, 2)
+  currency      String @default("VUV")
+  passenger     User @relation(fields: [passengerId], references: [id])
+  driver        User @relation("BookingDriver", fields: [driverId], references: [id])
+  trip          Trip? @relation(fields: [tripId], references: [id])
+  pickupStop    Stop? @relation("PickupStop", fields: [pickupStopId], references: [id])
+  dropoffStop   Stop? @relation("DropoffStop", fields: [dropoffStopId], references: [id])
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("bookings")
+}
+
+model Incident {
+  id          String @id @default(uuid())
+  reporterId  String @map("reporter_id")
+  tripId      String? @map("trip_id")
+  category    String
+  description String
+  status      String @default("OPEN")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("incidents")
+}

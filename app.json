@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "vanuatu-smart-transport",
+    "slug": "vanuatu-smart-transport",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "vanuatusmarttransport",
+    "userInterfaceStyle": "automatic",
+    "ios": {},
+    "android": {},
+    "web": {
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F3F7F5",
+          "image": "./assets/images/vanuatu-map.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "android": {
+            "backgroundColor": "#F3F7F5"
+          },
+          "ios": {
+            "backgroundColor": "#F3F7F5"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Vanuatu Smart Transport to share your location during an active trip."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

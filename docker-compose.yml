@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: vanuatu-transport-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: transport
+      POSTGRES_PASSWORD: transport_password
+      POSTGRES_DB: vanuatu_transport
+    ports:
+      - "5432:5432"
+    volumes:
+      - transport-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  transport-postgres-data:
