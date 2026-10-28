@@ -20,10 +20,10 @@ import EmergencySosModal from '@/components/EmergencySosModal';
 import ReportIncidentModal from '@/components/ReportIncidentModal';
 import DriverRatingModal from '@/components/DriverRatingModal';
 import RegulatedZoneGuideModal from '@/components/RegulatedZoneGuideModal';
-import { calculateRegulatedFare, detectZone } from '@/constants/zones';
+import { calculateRegulatedFare } from '@/constants/zones';
 import { sendBookingViaSms } from '@/utils/smsHelper';
 import VanuatuScreenBackground from '@/components/VanuatuScreenBackground';
-import { AvailableServiceItem, TripItem, VehicleCategory } from '@/types/transport';
+import { AvailableServiceItem, TripItem } from '@/types/transport';
 
 const getVehicleTypeLabel = (vehicleType: string) =>
   vehicleType === 'MINIBUS'
