@@ -16,7 +16,7 @@ export default function RootLayout() {
     useState(false);
   const isDarkAuthScreen =
     segments[0] === '(auth)' &&
-    (segments[1] === 'login' || segments[1] === 'register');
+    (segments.at(1) === 'login' || segments.at(1) === 'register');
 
   const hideNativeSplash = () => {
     if (hasHiddenNativeSplash.current) return;
@@ -39,7 +39,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isLoading || !hasMinimumSplashDurationElapsed) return;
-    if (segments[0] === 'tourist') return;
+    if (segments.at(0) === 'tourist') return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
@@ -69,6 +69,7 @@ export default function RootLayout() {
     isLoading,
     user,
     segments,
+    router,
   ]);
 
   return (
