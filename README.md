@@ -107,6 +107,8 @@ Never deploy with example values. Configure these server-side environment variab
 
 The server validates required production configuration at startup. Admin driver-management endpoints require a signed JWT with the `ADMIN` role. Keep the Docker Compose database credentials strictly local-development-only; change credentials and networking for any hosted deployment.
 
+Access tokens expire after 15 minutes. Refresh tokens last 30 days, are stored server-side only as hashes, and rotate on use. The `20261027000000_refresh_sessions_and_rating_uniqueness` migration adds revocable refresh sessions and enforces one driver rating per booking. Apply all pending migrations before deploying the updated API; existing users will need to sign in again after this migration.
+
 Apply migrations in production with:
 
 ```bash
@@ -129,7 +131,13 @@ Run backend build and automated tests:
 yarn --cwd server test
 ```
 
-The backend test suite covers admin and tourist-route authorization, password recovery behavior, and production environment validation. A successful build does not replace testing with a running database, SMS gateway, and physical devices.
+Run linting for the mobile app (tourist screens are excluded):
+
+```bash
+yarn lint
+```
+
+The backend test suite covers authorization, password recovery and refresh sessions, booking capacity and cancellation, driver location, ratings, tourist behavior, and production environment validation. A successful build does not replace testing with a running database, SMS gateway, and physical devices.
 
 Build and install Android locally (requires Android Studio/SDK):
 

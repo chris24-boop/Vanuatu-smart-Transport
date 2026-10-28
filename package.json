@@ -33,7 +33,10 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@eslint/compat": "^2.1.1",
     "@types/react": "~19.2.2",
+    "eslint": "10.13.0",
+    "eslint-config-expo": "~57.0.2",
     "typescript": "~6.0.3"
   },
   "scripts": {

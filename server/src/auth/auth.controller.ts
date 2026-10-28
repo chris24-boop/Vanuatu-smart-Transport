@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
+import { LogoutDto } from './dto/logout.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 
@@ -60,8 +61,8 @@ export class AuthController {
   }
 
   @Post('logout')
-  logout() {
-    return { success: true, message: 'Logged out successfully.' };
+  logout(@Body() data: LogoutDto) {
+    return this.authService.revokeRefreshToken(data?.refreshToken);
   }
 
   @Get('status')

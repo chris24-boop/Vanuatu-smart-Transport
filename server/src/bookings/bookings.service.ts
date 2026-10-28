@@ -83,10 +83,7 @@ export class BookingsService {
       throw new ConflictException('This trip or transport service is no longer active.');
     }
 
-    const seatsToBook = input.seatsCount || 1;
-    if (trip.availableSeats < seatsToBook && trip.availableSeats > 0) {
-      throw new ConflictException('Not enough seats available on this vehicle.');
-    }
+    const seatsToBook = input.seatsCount ?? 1;
 
     // Ensure pickup and dropoff stops exist on the route
     let pickupStop = trip.route.stops.find(
@@ -122,6 +119,19 @@ export class BookingsService {
     const calculatedFare = input.fare !== undefined ? input.fare : Number(trip.fare) * seatsToBook;
 
     const booking = await this.prisma.$transaction(async (tx) => {
+      const reservedSeats = await tx.trip.updateMany({
+        where: {
+          id: trip.id,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          availableSeats: { gte: seatsToBook },
+        },
+        data: { availableSeats: { decrement: seatsToBook } },
+      });
+
+      if (reservedSeats.count !== 1) {
+        throw new ConflictException('Not enough seats available on this vehicle.');
+      }
+
       const created = await tx.booking.create({
         data: {
           passengerId,
@@ -132,6 +142,7 @@ export class BookingsService {
           pickupLocation: input.pickupLocation.trim(),
           dropoffLocation: input.dropoffLocation.trim(),
           status: 'REQUESTED',
+          seatsCount: seatsToBook,
           fare: calculatedFare,
           currency: 'VT',
         },
@@ -149,14 +160,6 @@ export class BookingsService {
           dropoffStop: true,
         },
       });
-
-      // Update remaining seats if applicable
-      if (trip.availableSeats >= seatsToBook) {
-        await tx.trip.update({
-          where: { id: trip.id },
-          data: { availableSeats: Math.max(0, trip.availableSeats - seatsToBook) },
-        });
-      }
 
       return created;
     });
@@ -222,22 +225,48 @@ export class BookingsService {
       throw new ForbiddenException('You can only update bookings for your own vehicle.');
     }
 
-    const updated = await this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { status },
-      include: {
-        passenger: true,
-        driver: { include: { vehicles: true } },
-        trip: {
-          include: {
-            driver: true,
-            vehicle: true,
-            route: true,
-          },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.booking.updateMany({
+        where: {
+          id: bookingId,
+          status: status === 'CONFIRMED'
+            ? 'REQUESTED'
+            : status === 'CANCELLED'
+              ? { in: ['REQUESTED', 'CONFIRMED'] }
+              : 'CONFIRMED',
         },
-        pickupStop: true,
-        dropoffStop: true,
-      },
+        data: { status },
+      });
+      if (result.count !== 1) {
+        throw new ConflictException('This booking can no longer be updated.');
+      }
+
+      if (status === 'CANCELLED' && booking.tripId && booking.trip) {
+        await tx.trip.updateMany({
+          where: {
+            id: booking.tripId,
+            availableSeats: { lte: booking.trip.totalSeats - booking.seatsCount },
+          },
+          data: { availableSeats: { increment: booking.seatsCount } },
+        });
+      }
+
+      return tx.booking.findUniqueOrThrow({
+        where: { id: bookingId },
+        include: {
+          passenger: true,
+          driver: { include: { vehicles: true } },
+          trip: {
+            include: {
+              driver: true,
+              vehicle: true,
+              route: true,
+            },
+          },
+          pickupStop: true,
+          dropoffStop: true,
+        },
+      });
     });
 
     return this.toBookingResponse(updated);
@@ -246,6 +275,7 @@ export class BookingsService {
   async cancelBooking(passengerId: string, bookingId: string) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
+      include: { trip: true },
     });
 
     if (!booking) {
@@ -256,9 +286,31 @@ export class BookingsService {
       throw new ForbiddenException('You can only cancel your own bookings.');
     }
 
-    await this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { status: 'CANCELLED' },
+    if (!['REQUESTED', 'CONFIRMED'].includes(booking.status)) {
+      throw new ConflictException('This booking can no longer be cancelled.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const cancelled = await tx.booking.updateMany({
+        where: {
+          id: bookingId,
+          passengerId,
+          status: { in: ['REQUESTED', 'CONFIRMED'] },
+        },
+        data: { status: 'CANCELLED' },
+      });
+      if (cancelled.count !== 1) {
+        throw new ConflictException('This booking can no longer be cancelled.');
+      }
+      if (booking.tripId && booking.trip) {
+        await tx.trip.updateMany({
+          where: {
+            id: booking.tripId,
+            availableSeats: { lte: booking.trip.totalSeats - booking.seatsCount },
+          },
+          data: { availableSeats: { increment: booking.seatsCount } },
+        });
+      }
     });
 
     return { success: true, message: 'Booking cancelled.' };
@@ -365,12 +417,24 @@ export class BookingsService {
   }
 
   async updateDriverLocation(driverId: string, latitude: number, longitude: number) {
-    if (!driverId || latitude === undefined || longitude === undefined) {
-      throw new BadRequestException('driverId, latitude, and longitude are required.');
+    if (
+      !driverId ||
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new BadRequestException('A valid driver id, latitude, and longitude are required.');
     }
 
     const activeTrip = await this.prisma.trip.findFirst({
-      where: { driverId, status: 'ACTIVE' },
+      where: {
+        driverId,
+        status: 'ACTIVE',
+        driver: { driver: { is: { verificationStatus: 'VERIFIED' } } },
+      },
     });
 
     if (!activeTrip) {

@@ -13,7 +13,10 @@ import {
   saveRefreshToken,
   getAccessToken,
   clearTokens,
+  setSessionExpiredHandler,
 } from '@/utils/secureStorage';
+import { offlineCache } from '@/utils/offlineCache';
+import { resetTransportData } from './transportStore';
 
 interface AuthState {
   user: User | null;
@@ -40,6 +43,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const response = await loginApi(data);
       await saveAccessToken(response.accessToken);
       await saveRefreshToken(response.refreshToken);
+      await offlineCache.setUserScope(response.user.id);
+      resetTransportData();
       set({
         user: response.user,
         isAuthenticated: true,
@@ -59,6 +64,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const response = await registerApi(data);
       await saveAccessToken(response.accessToken);
       await saveRefreshToken(response.refreshToken);
+      await offlineCache.setUserScope(response.user.id);
+      resetTransportData();
       set({
         user: response.user,
         isAuthenticated: true,
@@ -79,9 +86,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await logoutApi();
     } catch {
-      // Continue logout even if API call fails
+      console.warn('Could not revoke the server session; local credentials were cleared.');
     } finally {
-      await clearTokens();
+      await offlineCache.clearUserData();
+      try {
+        await clearTokens();
+      } catch {
+        console.warn('Could not clear stored credentials from secure storage.');
+      }
+      resetTransportData();
       set({ user: null, isAuthenticated: false, error: null });
     }
   },
@@ -92,18 +105,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (token) {
         try {
           const user = await getMeApi();
+          await offlineCache.setUserScope(user.id);
           set({ user, isAuthenticated: true, isLoading: false });
         } catch {
+          await offlineCache.clearUserData();
           await clearTokens();
+          resetTransportData();
           set({ user: null, isAuthenticated: false, isLoading: false });
         }
       } else {
+        await offlineCache.clearUserData();
+        resetTransportData();
         set({ user: null, isAuthenticated: false, isLoading: false });
       }
     } catch {
+      await offlineCache.clearUserData();
+      resetTransportData();
       set({ user: null, isAuthenticated: false, isLoading: false });
     }
   },
 
   clearError: () => set({ error: null }),
 }));
+
+setSessionExpiredHandler(async () => {
+  await offlineCache.clearUserData();
+  resetTransportData();
+  useAuthStore.setState({
+    user: null,
+    isAuthenticated: false,
+    isLoading: false,
+    error: null,
+  });
+});

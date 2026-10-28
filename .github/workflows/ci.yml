@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: |
+            yarn.lock
+            server/yarn.lock
+      - name: Install mobile dependencies
+        run: yarn install --frozen-lockfile
+      - name: Install API dependencies
+        run: yarn --cwd server install --frozen-lockfile
+      - name: Generate Prisma Client
+        run: yarn --cwd server prisma:generate
+        env:
+          DATABASE_URL: postgresql://transport:transport_password@localhost:5432/vanuatu_transport
+      - name: Check mobile types
+        run: yarn tsc --noEmit
+      - name: Lint mobile app
+        run: yarn lint
+      - name: Build API and run tests
+        run: yarn --cwd server test

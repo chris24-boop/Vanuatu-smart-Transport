@@ -207,7 +207,7 @@ export default function DriverDashboardScreen() {
             <Text style={[styles.statValue, { color: '#0A84FF' }]}>
               {CURRENCY} {estimatedEarnings}
             </Text>
-            <Text style={styles.statLabel}>Today's Est.</Text>
+            <Text style={styles.statLabel}>Today&apos;s Est.</Text>
           </View>
         </View>
 
@@ -308,7 +308,7 @@ export default function DriverDashboardScreen() {
             <Text style={styles.emptyEmoji}>📋</Text>
             <Text style={styles.emptyText}>No scheduled routes today</Text>
             <Text style={styles.emptySubtext}>
-              Tap "Schedule Regular Trip" to broadcast a fixed route
+              Tap &quot;Schedule Regular Trip&quot; to broadcast a fixed route
             </Text>
           </View>
         ) : (

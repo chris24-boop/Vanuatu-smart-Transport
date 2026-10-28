@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Headers,
+  ForbiddenException,
   Param,
   Patch,
   Post,
@@ -12,6 +13,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { RateBookingDto } from './dto/rate-booking.dto';
+import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 
 @Controller()
 export class BookingsController {
@@ -69,10 +72,10 @@ export class BookingsController {
   async rateBooking(
     @Headers('authorization') authorization: string | undefined,
     @Param('id') id: string,
-    @Body() body: { rating: number; comment?: string },
+    @Body() body: RateBookingDto,
   ) {
     const user = await this.getIdentity(authorization);
-    return this.bookingsService.rateBooking(user.sub, id, Number(body.rating), body.comment);
+    return this.bookingsService.rateBooking(user.sub, id, body.rating, body.comment);
   }
 
   @Patch('driver/availability')
@@ -93,23 +96,21 @@ export class BookingsController {
   @Post('driver/location')
   async updateDriverLocation(
     @Headers('authorization') authorization: string | undefined,
-    @Body() body: { driverId?: string; latitude: number; longitude: number },
+    @Body() body: UpdateDriverLocationDto,
   ) {
-    let driverId = body.driverId;
-    if (authorization?.startsWith('Bearer ')) {
-      try {
-        const payload = await this.jwt.verifyAsync<{ sub: string }>(
-          authorization.slice('Bearer '.length),
-        );
-        if (payload?.sub) driverId = payload.sub;
-      } catch {
-        // Fall back to body.driverId if token invalid
-      }
+    if (!authorization?.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Authentication is required.');
     }
+
+    const payload = await this.getIdentity(authorization);
+    if (payload.role !== 'DRIVER') {
+      throw new ForbiddenException('Only drivers can update their location.');
+    }
+
     return this.bookingsService.updateDriverLocation(
-      driverId || '',
-      Number(body.latitude),
-      Number(body.longitude),
+      payload.sub,
+      body.latitude,
+      body.longitude,
     );
   }
 

@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -63,35 +63,50 @@ export class AuthService {
     const vehicleModel = data.vehicleModel?.trim() || (data.vehicleType === 'TAXI' ? 'Taxi Service' : data.vehicleType === 'BUS' ? 'Public Bus' : 'Public Transport');
 
     const passwordHash = await bcrypt.hash(data.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        firstName: data.firstName.trim(),
-        lastName: data.lastName.trim(),
-        phone,
-        email,
-        passwordHash,
-        role: assignedRole,
-        driver: assignedRole === 'DRIVER' ? {
-          create: {
-            licenceNumber: data.licenceNumber?.trim() || null,
-            verificationStatus: 'PENDING_VERIFICATION',
-          },
-        } : undefined,
-        vehicles: assignedRole === 'DRIVER' ? {
-          create: {
-            registrationNumber: vehiclePlate,
-            vehicleType: mappedVehicleType,
-            model: vehicleModel,
-            capacity: mappedVehicleType === 'TAXI' ? 4 : 14,
-            status: 'ACTIVE',
-          },
-        } : undefined,
-      },
-      include: {
-        driver: true,
-        vehicles: true,
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          firstName: data.firstName.trim(),
+          lastName: data.lastName.trim(),
+          phone,
+          email,
+          passwordHash,
+          role: assignedRole,
+          driver: assignedRole === 'DRIVER' ? {
+            create: {
+              licenceNumber: data.licenceNumber?.trim() || null,
+              verificationStatus: 'PENDING_VERIFICATION',
+            },
+          } : undefined,
+          vehicles: assignedRole === 'DRIVER' ? {
+            create: {
+              registrationNumber: vehiclePlate,
+              vehicleType: mappedVehicleType,
+              model: vehicleModel,
+              capacity: mappedVehicleType === 'TAXI' ? 4 : 14,
+              status: 'ACTIVE',
+            },
+          } : undefined,
+        },
+        include: {
+          driver: true,
+          vehicles: true,
+        },
+      });
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'One of the submitted details is already in use. Check the email, phone number, driver licence number, and vehicle registration.',
+        );
+      }
+      throw error;
+    }
 
     return this.createAuthResponse(user);
   }
@@ -160,19 +175,65 @@ export class AuthService {
   }
 
   async refreshToken(refreshToken: string) {
+    let payload: { sub: string; role: string; type: string; jti: string };
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; role: string }>(refreshToken);
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-        include: { driver: true, vehicles: true },
+      payload = await this.jwt.verifyAsync(refreshToken, {
+        secret: this.getRefreshTokenSecret(),
       });
-      if (!user) {
-        throw new UnauthorizedException('User not found.');
-      }
-      return this.createAuthResponse(user);
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token.');
     }
+
+    if (payload.type !== 'refresh' || !payload.jti || !payload.sub) {
+      throw new UnauthorizedException('Invalid or expired refresh token.');
+    }
+
+    const session = await this.prisma.refreshToken.findUnique({
+      where: { id: payload.jti },
+      include: { user: { include: { driver: true, vehicles: true } } },
+    });
+    const tokenHash = this.hashRefreshToken(refreshToken);
+    if (
+      !session ||
+      session.userId !== payload.sub ||
+      session.tokenHash !== tokenHash ||
+      session.revokedAt ||
+      session.expiresAt <= new Date()
+    ) {
+      throw new UnauthorizedException('Invalid or expired refresh token.');
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      const consumed = await transaction.refreshToken.updateMany({
+        where: {
+          id: session.id,
+          tokenHash,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+      if (consumed.count !== 1) {
+        throw new UnauthorizedException('Invalid or expired refresh token.');
+      }
+
+      return this.createAuthResponse(session.user, (data) =>
+        transaction.refreshToken.create({ data }),
+      );
+    });
+  }
+
+  async revokeRefreshToken(refreshToken?: string): Promise<{ success: true }> {
+    if (refreshToken) {
+      await this.prisma.refreshToken.updateMany({
+        where: {
+          tokenHash: this.hashRefreshToken(refreshToken),
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+    }
+    return { success: true };
   }
 
   async requestPasswordReset(phoneInput: string): Promise<{ message: string }> {
@@ -275,6 +336,10 @@ export class AuthService {
         where: { id: user.id },
         data: { passwordHash },
       });
+      await transaction.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: now },
+      });
       return true;
     });
 
@@ -291,6 +356,16 @@ export class AuthService {
       .digest('hex');
   }
 
+  private getRefreshTokenSecret(): string {
+    return createHmac('sha256', this.config.getOrThrow<string>('JWT_SECRET'))
+      .update('vanuatu-smart-transport:refresh-token-signing-key')
+      .digest('hex');
+  }
+
+  private hashRefreshToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
   private async createAuthResponse(user: {
     id: string | number;
     role: string;
@@ -300,8 +375,29 @@ export class AuthService {
     email: string | null;
     driver?: { verificationStatus?: string | null; licenceNumber?: string | null; availability?: string | null } | null;
     vehicles?: Array<{ registrationNumber?: string; vehicleType?: string; model?: string | null }> | null;
-  }) {
-    const accessToken = await this.jwt.signAsync({ sub: String(user.id), role: user.role });
+  }, saveRefreshToken: (data: {
+    id: string;
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }) => Promise<unknown> = (data) => this.prisma.refreshToken.create({ data })) {
+    const userId = String(user.id);
+    const refreshTokenId = randomUUID();
+    const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const accessToken = await this.jwt.signAsync(
+      { sub: userId, role: user.role, type: 'access' },
+      { expiresIn: '15m' },
+    );
+    const refreshToken = await this.jwt.signAsync(
+      { sub: userId, role: user.role, type: 'refresh', jti: refreshTokenId },
+      { secret: this.getRefreshTokenSecret(), expiresIn: '30d' },
+    );
+    await saveRefreshToken({
+      id: refreshTokenId,
+      userId,
+      tokenHash: this.hashRefreshToken(refreshToken),
+      expiresAt: refreshExpiresAt,
+    });
     const v = user.vehicles?.[0];
     const isPublicTransport = v?.vehicleType === 'CAR' || v?.model?.toLowerCase().includes('camion');
     const vehicleTypeDisplay = isPublicTransport
@@ -312,7 +408,7 @@ export class AuthService {
 
     return {
       accessToken,
-      refreshToken: accessToken,
+      refreshToken,
       user: {
         id: String(user.id),
         firstName: user.firstName,

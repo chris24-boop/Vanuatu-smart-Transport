@@ -1,5 +1,6 @@
 import { api } from './client';
 import { User } from '@/types/user';
+import { getRefreshToken } from '@/utils/secureStorage';
 
 export interface LoginRequest {
   email: string;
@@ -57,7 +58,8 @@ export async function refreshTokenApi(refreshToken: string): Promise<AuthRespons
 }
 
 export async function logoutApi(): Promise<void> {
-  await api.post('/auth/logout');
+  const refreshToken = await getRefreshToken();
+  await api.post('/auth/logout', { refreshToken });
 }
 
 export async function requestPasswordResetApi(

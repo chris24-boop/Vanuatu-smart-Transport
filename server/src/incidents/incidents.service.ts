@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 
 export interface CreateIncidentInput {
@@ -69,7 +74,7 @@ export class IncidentsService {
 
   // Driver Ratings stored persistently in incidents table
   async rateDriver(passengerId: string, bookingId: string, rating: number, comment?: string) {
-    if (rating < 1 || rating > 5) {
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       throw new BadRequestException('Rating must be between 1 and 5 stars.');
     }
 
@@ -81,6 +86,23 @@ export class IncidentsService {
     if (!booking) {
       throw new BadRequestException('Booking not found.');
     }
+    if (booking.passengerId !== passengerId) {
+      throw new ForbiddenException('You can only rate your own bookings.');
+    }
+    if (booking.status !== 'COMPLETED') {
+      throw new ConflictException('Only completed bookings can be rated.');
+    }
+
+    const existingRating = await this.prisma.incident.findFirst({
+      where: {
+        category: 'DRIVER_RATING',
+        OR: [{ bookingId }, { tripId: bookingId }],
+      },
+      select: { id: true },
+    });
+    if (existingRating) {
+      throw new ConflictException('This booking has already been rated.');
+    }
 
     const payload = {
       driverId: booking.driverId,
@@ -91,15 +113,28 @@ export class IncidentsService {
       comment: comment?.trim() || '',
     };
 
-    await this.prisma.incident.create({
-      data: {
-        reporterId: passengerId,
-        tripId: bookingId,
-        category: 'DRIVER_RATING',
-        description: JSON.stringify(payload),
-        status: 'RATED',
-      },
-    });
+    try {
+      await this.prisma.incident.create({
+        data: {
+          reporterId: passengerId,
+          tripId: bookingId,
+          bookingId,
+          category: 'DRIVER_RATING',
+          description: JSON.stringify(payload),
+          status: 'RATED',
+        },
+      });
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('This booking has already been rated.');
+      }
+      throw error;
+    }
 
     return {
       success: true,

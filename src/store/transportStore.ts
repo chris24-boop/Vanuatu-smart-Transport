@@ -365,3 +365,16 @@ export const useTransportStore = create<TransportState>((set, get) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setIsOffline: (offline) => set({ isOffline: offline }),
 }));
+
+export function resetTransportData(): void {
+  useTransportStore.setState({
+    trips: [],
+    drivers: [],
+    bookings: [],
+    driverBookings: [],
+    availableServices: [],
+    incidents: [],
+    driverAvailability: 'NOT_AVAILABLE',
+    isOffline: false,
+  });
+}

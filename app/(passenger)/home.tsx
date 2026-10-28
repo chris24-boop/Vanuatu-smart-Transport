@@ -1004,7 +1004,7 @@ export default function PassengerHomeScreen() {
                   <Ionicons name="receipt-outline" size={44} color="#C7C7CC" />
                   <Text style={styles.emptyBookingsTitle}>No Bookings Found</Text>
                   <Text style={styles.emptyBookingsText}>
-                    You haven't requested any rides yet. Choose a route or an available driver to book a trip.
+                    You haven&apos;t requested any rides yet. Choose a route or an available driver to book a trip.
                   </Text>
                 </View>
               ) : (

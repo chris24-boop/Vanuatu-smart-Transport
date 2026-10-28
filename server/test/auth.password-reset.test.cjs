@@ -124,6 +124,9 @@ test('a valid code changes the password and consumes the reset token', async () 
               updatedPasswordHash = data.passwordHash;
             },
           },
+          refreshToken: {
+            updateMany: async () => ({ count: 0 }),
+          },
         }),
     },
     {},

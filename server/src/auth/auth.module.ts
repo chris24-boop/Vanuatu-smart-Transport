@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
@@ -13,8 +14,10 @@ import { SmsGatewayService } from './sms-gateway.service';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: '7d' },
+        secret: createHmac('sha256', config.getOrThrow<string>('JWT_SECRET'))
+          .update('vanuatu-smart-transport:access-token-signing-key')
+          .digest('hex'),
+        signOptions: { expiresIn: '15m' },
       }),
     }),
   ],

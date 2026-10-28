@@ -4,6 +4,17 @@ const ACCESS_TOKEN_KEY = 'access_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 
 let accessTokenCache: string | null | undefined;
+let sessionExpiredHandler: (() => void | Promise<void>) | undefined;
+
+export function setSessionExpiredHandler(
+  handler: () => void | Promise<void>,
+): void {
+  sessionExpiredHandler = handler;
+}
+
+export async function notifySessionExpired(): Promise<void> {
+  await sessionExpiredHandler?.();
+}
 
 export async function saveAccessToken(token: string): Promise<void> {
   await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, token);

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   Animated,
   Image,
@@ -10,9 +10,9 @@ import {
 
 export default function TransportAuthBackground() {
   const { width } = useWindowDimensions();
-  const busPosition = useRef(new Animated.Value(-64)).current;
-  const boatPosition = useRef(new Animated.Value(width + 64)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [busPosition] = useState(() => new Animated.Value(-64));
+  const [boatPosition] = useState(() => new Animated.Value(width + 64));
+  const [pulse] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const busAnimation = Animated.loop(
