@@ -10,13 +10,14 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const { isAuthenticated, isLoading, user, loadToken } = useAuthStore();
   const segments = useSegments();
+  const segmentList: string[]=[...segments];
   const router = useRouter();
   const hasHiddenNativeSplash = useRef(false);
   const [hasMinimumSplashDurationElapsed, setHasMinimumSplashDurationElapsed] =
     useState(false);
   const isDarkAuthScreen =
-    segments[0] === '(auth)' &&
-    (segments.at(1) === 'login' || segments.at(1) === 'register');
+    segmentList[0] === '(auth)' &&
+    (segmentList.at(1) === 'login' || segmentList.at(1) === 'register');
 
   const hideNativeSplash = () => {
     if (hasHiddenNativeSplash.current) return;
@@ -39,14 +40,14 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (isLoading || !hasMinimumSplashDurationElapsed) return;
-    if (segments.at(0) === 'tourist') return;
+    if (segmentList.at(0) === 'tourist') return;
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const inAuthGroup = segmentList[0] === '(auth)';
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login');
     } else if (isAuthenticated) {
-      const currentGroup = segments[0];
+      const currentGroup = segmentList[0];
 
       if (user?.role === 'ADMIN') {
         if (currentGroup !== '(admin)') {
