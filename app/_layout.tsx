@@ -35,7 +35,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     loadToken();
-  }, []);
+  }, [loadToken]);
 
   useEffect(() => {
     if (isLoading || !hasMinimumSplashDurationElapsed) return;
