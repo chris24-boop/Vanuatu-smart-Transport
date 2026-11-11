@@ -71,12 +71,10 @@ export async function getDriverAvailabilityApi(): Promise<{
 export async function syncDriverLocationApi(
   latitude: number,
   longitude: number,
-  driverId?: string,
 ): Promise<{ success: boolean }> {
   const response = await api.post<{ success: boolean }>('/driver/location', {
     latitude,
     longitude,
-    driverId,
   });
   return response.data;
 }

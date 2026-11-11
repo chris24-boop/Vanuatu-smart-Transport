@@ -64,12 +64,31 @@ export class IncidentsService {
     return incidents.map((item) => this.toIncidentResponse(item));
   }
 
-  async updateIncidentStatus(id: string, status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED') {
-    const updated = await this.prisma.incident.update({
-      where: { id },
-      data: { status },
+  async updateIncidentStatus(
+    id: string,
+    status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED',
+    adminId: string,
+  ) {
+    if (!['OPEN', 'INVESTIGATING', 'RESOLVED'].includes(status)) {
+      throw new BadRequestException('Choose OPEN, INVESTIGATING, or RESOLVED.');
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      const updated = await transaction.incident.update({
+        where: { id },
+        data: { status },
+      });
+      await transaction.adminAuditLog.create({
+        data: {
+          actorId: adminId,
+          action: `INCIDENT_${status}`,
+          entity: 'INCIDENT',
+          entityId: id,
+          details: { status },
+        },
+      });
+      return this.toIncidentResponse(updated);
     });
-    return this.toIncidentResponse(updated);
   }
 
   // Driver Ratings stored persistently in incidents table

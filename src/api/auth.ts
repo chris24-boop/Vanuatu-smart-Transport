@@ -15,6 +15,8 @@ export interface RegisterRequest {
   password: string;
   role?: string;
   licenceNumber?: string;
+  licenceExpiry?: string;
+  yearsExperience?: number;
   vehicleType?: string;
   vehiclePlate?: string;
   vehicleModel?: string;

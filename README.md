@@ -8,6 +8,8 @@ Mobile transport platform for passengers, drivers, and transport administrators 
 - Passenger discovery of available services and scheduled bus trips, booking requests, booking history, and incident reports.
 - Driver dashboards, service availability, scheduled bus trips, booking management, and trip history.
 - Administrator driver review (verify, reject, suspend), trip administration, and incident review.
+- Desktop-friendly browser administration with session-scoped web tokens, document review, incident workflow controls, live-trip overview, and an admin activity log.
+- Database-backed dependency health checks and persisted in-app booking notifications for passengers and drivers.
 - Offline caches for trips and passenger/driver bookings.
 - Password recovery by SMS using a configurable HTTP gateway.
 - Guest tourist transfers and private tours: browse verified drivers, submit or cancel pending requests, receive/confirm quotes, and securely check requests with a private access code.
@@ -15,7 +17,9 @@ Mobile transport platform for passengers, drivers, and transport administrators 
 - Tourist quote handling, booking status and cash-payment recording; administrator listing controls, vehicle association, and destination catalog maintenance.
 - Vanuatu-focused localization, fare, and transport UI foundations.
 
-The API also provides the tourist transport request, quote, guest access, driver operations, and administrator endpoints. Tourist bookings are stored separately from account-required passenger bookings so visitors can request a service without registering. Cash collection is recorded by the driver; online payment processing, push notifications, and complete live GPS tracking are not implemented as production services.
+The API also provides the tourist transport request, quote, guest access, driver operations, and administrator endpoints. Tourist bookings are stored separately from account-required passenger bookings so visitors can request a service without registering. Cash collection is recorded by the driver; online payment processing and push notifications are not implemented as production services.
+
+The admin operations map is a schematic island overview, not a navigable map. Driver location updates use foreground tracking while the driver trip screen is open; background tracking is not implemented. Booking notifications are persisted in the app and polled while the app is open; OS push delivery is not configured. Web access tokens use per-tab `sessionStorage` (not encrypted); deploy the browser app only over HTTPS and protect it against cross-site scripting.
 
 The tourist feature requires the `20261019010000_tourist_transport`, `20261020000000_tourist_service_details`, and `20261020100000_driver_managed_tourist_services` Prisma migrations. Apply them using the migration commands below before running the API. Tourist request references and private access codes are issued once at creation; keep both private to retrieve the guest request and quotes later. Admins verify driver registration; they do not approve tourist-service listings or bookings.
 
@@ -107,7 +111,7 @@ Never deploy with example values. Configure these server-side environment variab
 
 The server validates required production configuration at startup. Admin driver-management endpoints require a signed JWT with the `ADMIN` role. Keep the Docker Compose database credentials strictly local-development-only; change credentials and networking for any hosted deployment.
 
-Access tokens expire after 15 minutes. Refresh tokens last 30 days, are stored server-side only as hashes, and rotate on use. The `20261027000000_refresh_sessions_and_rating_uniqueness` migration adds revocable refresh sessions and enforces one driver rating per booking. Apply all pending migrations before deploying the updated API; existing users will need to sign in again after this migration.
+Access tokens expire after 15 minutes. Refresh tokens last 30 days, are stored server-side only as hashes, and rotate on use. The `20261027000000_refresh_sessions_and_rating_uniqueness` migration adds revocable refresh sessions and enforces one driver rating per booking. The `20261111000000_admin_operations` migration adds driver review/document records, incident and admin audit data, notifications, and trip location timestamps. Apply all pending migrations before deploying the updated API; existing users will need to sign in again after the refresh-session migration.
 
 Apply migrations in production with:
 
@@ -116,6 +120,16 @@ yarn --cwd server prisma:migrate:deploy
 ```
 
 Do not use `prisma migrate dev` against a production database.
+
+### Monitoring, backups, and recovery
+
+`GET /api/v1/health` checks PostgreSQL connectivity and returns an unhealthy response when the database cannot be reached. Configure the deployment platform to monitor this endpoint and alert on failed checks, API errors, and elevated latency. The endpoint does not replace application error tracking; production deployments should add an error-monitoring provider with appropriate data scrubbing and access controls.
+
+Set up automated encrypted PostgreSQL backups with a documented retention policy, and test restore procedures into a separate environment before launch and after schema changes. For a manual backup, use the PostgreSQL provider's supported backup tooling (or `pg_dump` for self-managed PostgreSQL); keep credentials outside source control. Recovery steps should cover database restoration, applying the matching application version and migrations, verifying `/api/v1/health`, and checking a login and booking flow. No backup schedule or recovery-time objective is configured by this repository.
+
+### Browser administration
+
+Start the app with `yarn web` and sign in with an administrator account created through the seed command. Admin routes require the admin role. Browser session tokens are cleared when the tab's session ends; they are not stored by the native secure-storage implementation. Use HTTPS in any hosted environment, keep `CLIENT_ORIGIN` restricted to the deployed origin, and apply a Content Security Policy before exposing the portal publicly.
 
 ## Validation
 

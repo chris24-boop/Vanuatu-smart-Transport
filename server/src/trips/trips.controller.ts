@@ -212,7 +212,7 @@ export class TripsController {
     @Param('id') id: string,
   ) {
     const identity = await this.getIdentity(authorization);
-    const trip = await this.prisma.trip.findUnique({ where: { id }, include: { vehicle: true } });
+    const trip = await this.prisma.trip.findUnique({ where: { id }, include: { vehicle: true, route: true } });
 
     if (!trip) {
       throw new NotFoundException('Trip not found.');
@@ -230,9 +230,22 @@ export class TripsController {
       throw new ConflictException('A completed trip cannot be cancelled.');
     }
 
-    await this.prisma.trip.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.trip.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      });
+      if (identity.role === 'ADMIN') {
+        await transaction.adminAuditLog.create({
+          data: {
+            actorId: identity.sub,
+            action: 'TRIP_CANCELLED',
+            entity: 'TRIP',
+            entityId: id,
+            details: { origin: trip.route.origin, destination: trip.route.destination },
+          },
+        });
+      }
     });
 
     return { success: true };

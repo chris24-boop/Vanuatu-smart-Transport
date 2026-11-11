@@ -34,7 +34,7 @@ function scopedKey(key: string): string | null {
 async function writeStorage(key: string, value: string): Promise<void> {
   try {
     if (Platform.OS === 'web') {
-      localStorage.setItem(key, value);
+      sessionStorage.setItem(key, value);
     } else {
       await SecureStore.setItemAsync(secureStoreKey(key), value);
     }
@@ -46,7 +46,7 @@ async function writeStorage(key: string, value: string): Promise<void> {
 async function removeStorage(key: string): Promise<void> {
   try {
     if (Platform.OS === 'web') {
-      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     } else {
       await SecureStore.deleteItemAsync(secureStoreKey(key));
     }
@@ -70,7 +70,7 @@ async function removeLegacyCacheData(): Promise<void> {
 async function readStorage(key: string): Promise<string | null> {
   try {
     if (Platform.OS === 'web') {
-      return localStorage.getItem(key);
+      return sessionStorage.getItem(key);
     }
     return await SecureStore.getItemAsync(secureStoreKey(key));
   } catch (error) {

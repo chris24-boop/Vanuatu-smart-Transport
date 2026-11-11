@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  ForbiddenException,
   Param,
   Patch,
   Post,
@@ -72,8 +73,8 @@ export class IncidentsController {
     @Param('id') id: string,
     @Body() body: { status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' },
   ) {
-    await this.requireAdmin(authorization);
-    return this.incidentsService.updateIncidentStatus(id, body.status);
+    const admin = await this.requireAdmin(authorization);
+    return this.incidentsService.updateIncidentStatus(id, body.status, admin.sub);
   }
 
   private async requireAdmin(authorization: string | undefined) {
@@ -81,16 +82,17 @@ export class IncidentsController {
       throw new UnauthorizedException('Authentication is required.');
     }
 
+    let payload: { sub: string; role: string };
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; role: string }>(
+      payload = await this.jwt.verifyAsync<{ sub: string; role: string }>(
         authorization.slice('Bearer '.length),
       );
-      if (payload.role !== 'ADMIN') {
-        throw new UnauthorizedException('Only transport administrators can review incident reports.');
-      }
-      return payload;
     } catch {
       throw new UnauthorizedException('Invalid or expired authentication token.');
     }
+    if (!payload.sub || payload.role !== 'ADMIN') {
+      throw new ForbiddenException('Only transport administrators can review incident reports.');
+    }
+    return payload;
   }
 }

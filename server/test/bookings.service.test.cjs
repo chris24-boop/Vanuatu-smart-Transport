@@ -21,6 +21,7 @@ function createBookingService(initialSeats, totalSeats = Math.max(1, initialSeat
     },
   };
   let bookingCreates = 0;
+  let notificationCreates = 0;
   let bookingStatus = 'REQUESTED';
   const prisma = {
     trip: {
@@ -118,6 +119,12 @@ function createBookingService(initialSeats, totalSeats = Math.max(1, initialSeat
             trip: { fare: 100 },
           }),
         },
+        userNotification: {
+          create: async () => {
+            notificationCreates += 1;
+            return {};
+          },
+        },
       }),
   };
 
@@ -130,6 +137,7 @@ function createBookingService(initialSeats, totalSeats = Math.max(1, initialSeat
     service,
     getAvailableSeats: () => trip.availableSeats,
     getBookingCreates: () => bookingCreates,
+    getNotificationCreates: () => notificationCreates,
   };
 }
 
@@ -139,11 +147,12 @@ const bookingInput = {
   dropoffLocation: 'Airport',
 };
 
-test('booking reserves seats with a conditional atomic decrement', async () => {
-  const { service, getAvailableSeats, getBookingCreates } = createBookingService(2);
+test('booking reserves seats atomically and notifies the driver', async () => {
+  const { service, getAvailableSeats, getBookingCreates, getNotificationCreates } = createBookingService(2);
   await service.createBooking('passenger-1', { ...bookingInput, seatsCount: 2 });
   assert.equal(getAvailableSeats(), 0);
   assert.equal(getBookingCreates(), 1);
+  assert.equal(getNotificationCreates(), 1);
 });
 
 test('booking rejects when the trip has no remaining seats', async () => {

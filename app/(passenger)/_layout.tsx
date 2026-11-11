@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import NotificationBell from '@/components/NotificationBell';
 
 export default function PassengerLayout() {
   return (
@@ -31,6 +32,7 @@ export default function PassengerLayout() {
           fontWeight: '700',
           fontSize: 18,
         },
+        headerRight: () => <NotificationBell />,
       }}
     >
       <Tabs.Screen

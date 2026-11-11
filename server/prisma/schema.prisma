@@ -24,8 +24,21 @@ enum DriverVerificationStatus {
   REGISTERED
   PENDING_VERIFICATION
   VERIFIED
+  REJECTED
   SUSPENDED
   EXPIRED
+}
+
+enum DriverDocumentType {
+  LICENCE
+  VEHICLE_REGISTRATION
+  INSURANCE
+}
+
+enum DriverDocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum DriverAvailability {
@@ -115,6 +128,8 @@ model User {
   bookingsAsDriver Booking[] @relation("BookingDriver")
   passwordResetTokens PasswordResetToken[]
   refreshTokens RefreshToken[]
+  notifications UserNotification[]
+  adminAuditLogs AdminAuditLog[] @relation("AdminAuditActor")
   touristServiceProfile TouristServiceProfile?
   touristRequestsAsPassenger TouristRequest[] @relation("TouristRequester")
   touristRequestsAsDriver TouristRequest[] @relation("TouristAssignedDriver")
@@ -284,9 +299,16 @@ model Driver {
   userId               String @unique @map("user_id")
   licenceNumber        String? @unique @map("licence_number")
   licenceExpiry        DateTime? @map("licence_expiry")
+  island               String?
+  yearsExperience      Int? @map("years_experience")
   verificationStatus   DriverVerificationStatus @default(REGISTERED) @map("verification_status")
+  rejectionReason      String? @map("rejection_reason")
+  suspensionReason     String? @map("suspension_reason")
+  reviewedAt           DateTime? @map("reviewed_at")
+  reviewedById         String? @map("reviewed_by_id")
   availability         DriverAvailability @default(NOT_AVAILABLE)
   user                 User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents            DriverDocument[]
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -358,6 +380,7 @@ model Trip {
   endTime         DateTime? @map("end_time")
   currentLatitude Decimal? @db.Decimal(10, 7) @map("current_latitude")
   currentLongitude Decimal? @db.Decimal(10, 7) @map("current_longitude")
+  locationUpdatedAt DateTime? @map("location_updated_at")
   departureTime   String @default("Departing Soon") @map("departure_time")
   durationMinutes Int @default(30) @map("duration_minutes")
   fare            Decimal @default(150) @db.Decimal(12, 2)
@@ -410,4 +433,52 @@ model Incident {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("incidents")
+}
+
+model DriverDocument {
+  id            String @id @default(cuid())
+  driverId      String @map("driver_id")
+  type          DriverDocumentType
+  filename      String
+  mimeType      String @map("mime_type")
+  content       Bytes
+  status        DriverDocumentStatus @default(PENDING)
+  reviewReason  String? @map("review_reason")
+  reviewedAt    DateTime? @map("reviewed_at")
+  reviewedById  String? @map("reviewed_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  driver        Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, type, status])
+  @@map("driver_documents")
+}
+
+model AdminAuditLog {
+  id         String @id @default(cuid())
+  actorId    String @map("actor_id")
+  action     String
+  entity     String
+  entityId   String @map("entity_id")
+  details    Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  actor      User @relation("AdminAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([entity, entityId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+model UserNotification {
+  id         String @id @default(cuid())
+  userId     String @map("user_id")
+  title      String
+  body       String
+  type       String
+  entityId   String? @map("entity_id")
+  readAt     DateTime? @map("read_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("user_notifications")
 }

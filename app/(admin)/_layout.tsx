@@ -4,8 +4,9 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTransportStore } from '@/store/transportStore';
 import { DriverVerificationStatus } from '@/types/user';
 
-import { Pressable, Alert } from 'react-native';
+import { Pressable } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
+import { confirmAdminAction } from '@/utils/adminDialogs';
 
 export default function AdminLayout() {
   const { logout } = useAuthStore();
@@ -14,11 +15,10 @@ export default function AdminLayout() {
     (d) => d.verificationStatus === DriverVerificationStatus.PENDING_VERIFICATION
   ).length;
 
-  const handleLogout = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of the Admin panel?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: logout },
-    ]);
+  const handleLogout = async () => {
+    if (await confirmAdminAction('Sign out', 'Are you sure you want to sign out of the admin portal?')) {
+      await logout();
+    }
   };
 
   return (

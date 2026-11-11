@@ -29,6 +29,9 @@ export default function RegisterScreen() {
   const [vehiclePlate, setVehiclePlate] = useState("");
   const [vehicleModel, setVehicleModel] = useState("");
   const [licenceNumber, setLicenceNumber] = useState("");
+  const [licenceExpiry, setLicenceExpiry] = useState("");
+  const [yearsExperience, setYearsExperience] = useState("");
+  const [island, setIsland] = useState("");
 
   const {
     register,
@@ -54,8 +57,10 @@ export default function RegisterScreen() {
         vehicleType: role === "DRIVER" ? vehicleType : undefined,
         vehiclePlate: role === "DRIVER" ? vehiclePlate.trim() : undefined,
         licenceNumber: role === "DRIVER" ? licenceNumber.trim() : undefined,
+        licenceExpiry: role === "DRIVER" && licenceExpiry ? licenceExpiry : undefined,
+        yearsExperience: role === "DRIVER" && yearsExperience ? Number(yearsExperience) : undefined,
         vehicleModel: role === "DRIVER" ? (vehicleModel.trim() || undefined) : undefined,
-        island: "Port Vila (Efate)",
+        island: role === "DRIVER" ? island.trim() : undefined,
       });
     } catch {
       // Error is set in store
@@ -212,6 +217,40 @@ export default function RegisterScreen() {
                         <Text style={styles.inputLabel}>
                           First Name
                         </Text>
+                      </View>
+
+                      <View style={styles.row}>
+                        <View style={styles.halfInput}>
+                          <Text style={styles.inputLabel}>Licence Expiry (YYYY-MM-DD)</Text>
+                          <Input
+                            label=""
+                            placeholder="2028-12-31"
+                            value={licenceExpiry}
+                            onChangeText={setLicenceExpiry}
+                            autoCapitalize="none"
+                          />
+                        </View>
+
+                        <View style={styles.halfInput}>
+                          <Text style={styles.inputLabel}>Years Driving</Text>
+                          <Input
+                            label=""
+                            placeholder="0"
+                            value={yearsExperience}
+                            onChangeText={(value) => setYearsExperience(value.replace(/\D/g, ""))}
+                            keyboardType="number-pad"
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.inputSection}>
+                        <Text style={styles.inputLabel}>Home Island or Region</Text>
+                        <Input
+                          label=""
+                          placeholder="e.g. Efate"
+                          value={island}
+                          onChangeText={setIsland}
+                        />
                       </View>
 
                       <Input

@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 import { AuthController } from './auth.controller';
+import { DriverDocumentsController } from './driver-documents.controller';
 import { AuthService } from './auth.service';
 import { SmsGatewayService } from './sms-gateway.service';
 
@@ -21,7 +22,7 @@ import { SmsGatewayService } from './sms-gateway.service';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, DriverDocumentsController],
   providers: [AuthService, PrismaService, SmsGatewayService],
   exports: [JwtModule],
 })

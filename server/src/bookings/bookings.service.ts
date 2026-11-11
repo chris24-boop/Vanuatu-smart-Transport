@@ -41,23 +41,35 @@ export class BookingsService {
         throw new ForbiddenException('Direct bookings are only available for taxi and public transport drivers.');
       }
 
-      const booking = await this.prisma.booking.create({
-        data: {
-          passengerId,
-          driverId: driver.id,
-          pickupLocation: input.pickupLocation.trim(),
-          dropoffLocation: input.dropoffLocation.trim(),
-          status: 'REQUESTED',
-          fare: input.fare ?? (vehicle.vehicleType === 'TAXI' ? 300 : 150),
-          currency: 'VT',
-        },
-        include: {
-          passenger: true,
-          driver: { include: { vehicles: true } },
-          trip: { include: { driver: true, vehicle: true, route: true } },
-          pickupStop: true,
-          dropoffStop: true,
-        },
+      const booking = await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.booking.create({
+          data: {
+            passengerId,
+            driverId: driver.id,
+            pickupLocation: input.pickupLocation.trim(),
+            dropoffLocation: input.dropoffLocation.trim(),
+            status: 'REQUESTED',
+            fare: input.fare ?? (vehicle.vehicleType === 'TAXI' ? 300 : 150),
+            currency: 'VT',
+          },
+          include: {
+            passenger: true,
+            driver: { include: { vehicles: true } },
+            trip: { include: { driver: true, vehicle: true, route: true } },
+            pickupStop: true,
+            dropoffStop: true,
+          },
+        });
+        await transaction.userNotification.create({
+          data: {
+            userId: driver.id,
+            title: 'New booking request',
+            body: 'A passenger requested your transport service.',
+            type: 'BOOKING_REQUESTED',
+            entityId: created.id,
+          },
+        });
+        return created;
       });
 
       return this.toBookingResponse(booking, input.cargoNotes);
@@ -161,6 +173,16 @@ export class BookingsService {
         },
       });
 
+      await tx.userNotification.create({
+        data: {
+          userId: trip.driverId,
+          title: 'New trip booking',
+          body: `A passenger requested ${trip.route.origin} to ${trip.route.destination}.`,
+          type: 'BOOKING_REQUESTED',
+          entityId: created.id,
+        },
+      });
+
       return created;
     });
 
@@ -251,7 +273,7 @@ export class BookingsService {
         });
       }
 
-      return tx.booking.findUniqueOrThrow({
+      const updatedBooking = await tx.booking.findUniqueOrThrow({
         where: { id: bookingId },
         include: {
           passenger: true,
@@ -267,6 +289,16 @@ export class BookingsService {
           dropoffStop: true,
         },
       });
+      await tx.userNotification.create({
+        data: {
+          userId: booking.passengerId,
+          title: 'Booking updated',
+          body: `Your booking status is now ${status.toLowerCase()}.`,
+          type: `BOOKING_${status}`,
+          entityId: bookingId,
+        },
+      });
+      return updatedBooking;
     });
 
     return this.toBookingResponse(updated);
@@ -311,6 +343,15 @@ export class BookingsService {
           data: { availableSeats: { increment: booking.seatsCount } },
         });
       }
+      await tx.userNotification.create({
+        data: {
+          userId: booking.driverId,
+          title: 'Booking cancelled',
+          body: 'A passenger cancelled their booking.',
+          type: 'BOOKING_CANCELLED',
+          entityId: bookingId,
+        },
+      });
     });
 
     return { success: true, message: 'Booking cancelled.' };
@@ -446,6 +487,7 @@ export class BookingsService {
       data: {
         currentLatitude: latitude,
         currentLongitude: longitude,
+        locationUpdatedAt: new Date(),
       },
     });
 

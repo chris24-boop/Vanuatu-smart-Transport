@@ -53,10 +53,52 @@ export interface DriverApplicant {
   vehicleType: VehicleCategory;
   vehiclePlate: string;
   vehicleModel: string;
-  island: string;
-  yearsExperience: number;
+  island: string | null;
+  yearsExperience: number | null;
   verificationStatus: DriverVerificationStatus;
+  rejectionReason?: string | null;
+  suspensionReason?: string | null;
+  reviewedAt?: string | null;
   appliedDate: string;
+  documents: DriverDocumentItem[];
+}
+
+export type DriverDocumentType = 'LICENCE' | 'VEHICLE_REGISTRATION' | 'INSURANCE';
+export type DriverDocumentStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface DriverDocumentItem {
+  id: string;
+  type: DriverDocumentType;
+  filename: string;
+  mimeType: string;
+  status: DriverDocumentStatus;
+  reviewReason: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminActivityItem {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+  actorName: string;
+  actorEmail: string | null;
+}
+
+export interface LiveTripLocation {
+  id: string;
+  latitude: number;
+  longitude: number;
+  updatedAt: string | null;
+  driverName: string;
+  driverPhone: string;
+  vehiclePlate: string;
+  vehicleType: string;
+  origin: string;
+  destination: string;
 }
 
 export interface CreateTripInput {
@@ -132,4 +174,3 @@ export interface IncidentItem {
   status: string;
   createdAt: string;
 }
-

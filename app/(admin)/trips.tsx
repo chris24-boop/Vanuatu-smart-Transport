@@ -6,13 +6,13 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTransportStore } from '@/store/transportStore';
 import { TripItem, VehicleCategory } from '@/types/transport';
 import VanuatuScreenBackground from '@/components/VanuatuScreenBackground';
+import { confirmAdminAction, showAdminMessage } from '@/utils/adminDialogs';
 
 export default function AdminTripsScreen() {
   const { trips, fetchTrips, removeTrip } = useTransportStore();
@@ -51,25 +51,17 @@ export default function AdminTripsScreen() {
     return true;
   });
 
-  const handleDeleteTrip = (trip: TripItem) => {
-    Alert.alert(
-      'Delete Trip',
-      `Delete trip "${trip.origin} → ${trip.destination}" by ${trip.driverName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await removeTrip(trip.id);
-            } catch (error) {
-              Alert.alert('Unable to Cancel Trip', error instanceof Error ? error.message : 'Please try again.');
-            }
-          },
-        },
-      ]
+  const handleDeleteTrip = async (trip: TripItem) => {
+    const confirmed = await confirmAdminAction(
+      'Cancel trip',
+      `Cancel "${trip.origin} to ${trip.destination}" by ${trip.driverName}?`,
     );
+    if (!confirmed) return;
+    try {
+      await removeTrip(trip.id);
+    } catch (error) {
+      showAdminMessage('Unable to cancel trip', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
 
   return (
@@ -268,7 +260,7 @@ export default function AdminTripsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: 'transparent' },
   scroll: { flex: 1 },
-  container: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 40 },
+  container: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 50, width: '100%', maxWidth: 1180, alignSelf: 'center' },
   header: { marginBottom: 16 },
   title: { fontSize: 24, fontWeight: '800', color: '#1C1C1E' },
   subtitle: { fontSize: 13, color: '#636366', marginTop: 3 },

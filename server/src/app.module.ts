@@ -9,6 +9,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { validateEnvironment } from './config/env.validation';
 import { TouristModule } from './tourist/tourist.module';
+import { NotificationsController } from './notifications.controller';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { TouristModule } from './tourist/tourist.module';
     IncidentsModule,
     TouristModule,
   ],
-  controllers: [HealthController, AdminController, TripsController],
+  controllers: [HealthController, AdminController, TripsController, NotificationsController],
   providers: [PrismaService],
   exports: [PrismaService],
 })

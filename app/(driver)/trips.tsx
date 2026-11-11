@@ -20,38 +20,16 @@ import { DriverAvailability } from "@/types/transport";
 import DriverAvailabilityControl from "@/components/DriverAvailabilityControl";
 import VanuatuScreenBackground from "@/components/VanuatuScreenBackground";
 import { DriverVerificationStatus } from "@/types/user";
-import { API_BASE_URL } from "@/constants";
+import { syncDriverLocationApi } from "@/api/bookings";
 
 let locationInterval: ReturnType<typeof setInterval> | null = null;
 
-async function syncDriverLocation(driverId: string) {
-  if (!driverId) {
-    return false;
-  }
-
+async function syncDriverLocation() {
   try {
     const position = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.High,
     });
-    const response = await fetch(`${API_BASE_URL}/driver/location`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        driverId,
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      console.error("Failed to sync location:", data.error || response.statusText);
-      return false;
-    }
-
+    await syncDriverLocationApi(position.coords.latitude, position.coords.longitude);
     console.log("GPS synced successfully:", position.coords.latitude, position.coords.longitude);
     return true;
   } catch (error) {
@@ -78,17 +56,15 @@ async function ensureDriverLocationAccess() {
   return true;
 }
 
-function startDriverTracking(driverId: string) {
-  if (!driverId) return;
-
+function startDriverTracking() {
   if (locationInterval) {
     stopDriverTracking();
   }
 
-  void syncDriverLocation(driverId);
+  void syncDriverLocation();
 
   locationInterval = setInterval(() => {
-    void syncDriverLocation(driverId);
+    void syncDriverLocation();
   }, 10000);
 }
 
@@ -162,6 +138,8 @@ export default function TripsScreen() {
     if (supportsAvailability) void fetchDriverAvailability();
   }, [fetchTrips, fetchDriverAvailability, supportsAvailability]);
 
+  useEffect(() => () => stopDriverTracking(), []);
+
   // Filter trips for this driver
   const myTrips = user
     ? trips.filter(
@@ -229,7 +207,7 @@ export default function TripsScreen() {
     }
     try {
       await updateTripStatus(id, "ACTIVE");
-      startDriverTracking(currentDriverId);
+      startDriverTracking();
       Alert.alert("Trip Started", "Passengers can now track your bus in real time!");
     } catch (error) {
       Alert.alert("Unable to Start Trip", error instanceof Error ? error.message : "Please try again.");

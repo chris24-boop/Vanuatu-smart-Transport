@@ -6,7 +6,9 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  Alert,
+  Modal,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,16 +16,29 @@ import { useTransportStore } from '@/store/transportStore';
 import { DriverApplicant } from '@/types/transport';
 import { DriverVerificationStatus } from '@/types/user';
 import VanuatuScreenBackground from '@/components/VanuatuScreenBackground';
+import {
+  getDriverDocumentApi,
+  reviewDriverDocumentApi,
+} from '@/api/admin';
+import { confirmAdminAction, showAdminMessage } from '@/utils/adminDialogs';
 
-type FilterTab = 'ALL' | 'PENDING' | 'VERIFIED' | 'SUSPENDED';
+type FilterTab = 'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED';
+type ReviewAction = 'REJECT_DRIVER' | 'SUSPEND_DRIVER' | 'REJECT_DOCUMENT';
 
 export default function AdminDriversScreen() {
   const { drivers, verifyDriver, rejectDriver, suspendDriver, fetchDrivers } = useTransportStore();
   const [activeTab, setActiveTab] = useState<FilterTab>('PENDING');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dialog, setDialog] = useState<{ driver: DriverApplicant; action: ReviewAction; documentId?: string } | null>(null);
+  const [reason, setReason] = useState('');
+  const [dialogError, setDialogError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    void fetchDrivers();
+    void fetchDrivers().catch((error: unknown) => {
+      setLoadError(error instanceof Error ? error.message : 'Unable to load driver applications.');
+    });
   }, [fetchDrivers]);
 
   const pendingCount = drivers.filter(
@@ -38,6 +53,9 @@ export default function AdminDriversScreen() {
     if (activeTab === 'VERIFIED' && driver.verificationStatus !== DriverVerificationStatus.VERIFIED) {
       return false;
     }
+    if (activeTab === 'REJECTED' && driver.verificationStatus !== DriverVerificationStatus.REJECTED) {
+      return false;
+    }
     if (activeTab === 'SUSPENDED' && driver.verificationStatus !== DriverVerificationStatus.SUSPENDED) {
       return false;
     }
@@ -48,77 +66,98 @@ export default function AdminDriversScreen() {
       const matchName = driver.fullName.toLowerCase().includes(q);
       const matchPlate = driver.vehiclePlate.toLowerCase().includes(q);
       const matchLicence = driver.licenceNumber.toLowerCase().includes(q);
-      const matchIsland = driver.island.toLowerCase().includes(q);
+      const matchIsland = driver.island?.toLowerCase().includes(q) ?? false;
       return matchName || matchPlate || matchLicence || matchIsland;
     }
 
     return true;
   });
 
-  const handleVerify = (driver: DriverApplicant) => {
-    Alert.alert(
-      'Approve Driver Registration',
-      `Confirm registration for ${driver.fullName} (${driver.licenceNumber}) for ${driver.vehicleType} ${driver.vehiclePlate}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Approve & Verify',
-          style: 'default',
-          onPress: async () => {
-            try {
-              await verifyDriver(driver.userId);
-              Alert.alert('Driver Verified', `${driver.fullName} is now an authorized driver on Vanuatu Smart Transport.`);
-            } catch (error) {
-              Alert.alert('Approval Failed', error instanceof Error ? error.message : 'Unable to approve this driver right now.');
-            }
-          },
-        },
-      ]
+  const handleVerify = async (driver: DriverApplicant) => {
+    const confirmed = await confirmAdminAction(
+      'Verify driver',
+      `Approve ${driver.fullName}? The licence and vehicle registration must both be approved first.`,
     );
+    if (!confirmed) return;
+    try {
+      await verifyDriver(driver.userId);
+      await fetchDrivers();
+      showAdminMessage('Driver verified', `${driver.fullName} is now verified.`);
+    } catch (error) {
+      showAdminMessage('Could not verify driver', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
 
   const handleReject = (driver: DriverApplicant) => {
-    Alert.prompt(
-      'Reject Driver Registration',
-      'Add a reason for rejecting this driver application:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject Driver',
-          style: 'destructive',
-          onPress: async (reason?: string) => {
-            try {
-              await rejectDriver(driver.userId, reason || 'No reason provided');
-              Alert.alert('Driver Rejected', `${driver.fullName} was rejected. Reason: ${reason || 'No reason provided'}`);
-            } catch {
-              Alert.alert('Error', 'Unable to reject this driver right now.');
-            }
-          },
-        },
-      ],
-      'plain-text',
-      '',
-      'default'
-    );
+    setReason('');
+    setDialogError('');
+    setDialog({ driver, action: 'REJECT_DRIVER' });
   };
 
   const handleSuspend = (driver: DriverApplicant) => {
-    Alert.alert(
-      'Suspend Driver',
-      `Are you sure you want to suspend driver licence for ${driver.fullName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Suspend',
-          style: 'destructive',
-          onPress: () => {
-            void suspendDriver(driver.userId).catch(() => {
-              Alert.alert('Error', 'Unable to suspend this driver right now.');
-            });
-          },
-        },
-      ]
-    );
+    setReason('');
+    setDialogError('');
+    setDialog({ driver, action: 'SUSPEND_DRIVER' });
+  };
+
+  const handleReviewDocument = async (
+    driver: DriverApplicant,
+    documentId: string,
+    status: 'APPROVED' | 'REJECTED',
+  ) => {
+    if (status === 'REJECTED') {
+      setReason('');
+      setDialogError('');
+      setDialog({ driver, action: 'REJECT_DOCUMENT', documentId });
+      return;
+    }
+    try {
+      await reviewDriverDocumentApi(driver.userId, documentId, 'APPROVED');
+      await fetchDrivers();
+    } catch (error) {
+      showAdminMessage('Could not review document', error instanceof Error ? error.message : 'Please try again.');
+    }
+  };
+
+  const openDocument = async (driver: DriverApplicant, documentId: string) => {
+    if (Platform.OS !== 'web') {
+      showAdminMessage('Document preview', 'Open the admin portal in a browser to preview verification documents.');
+      return;
+    }
+    try {
+      const file = await getDriverDocumentApi(driver.userId, documentId);
+      const url = window.URL.createObjectURL(file);
+      const viewer = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!viewer) showAdminMessage('Pop-up blocked', 'Allow pop-ups to preview this document.');
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      showAdminMessage('Could not open document', error instanceof Error ? error.message : 'Please try again.');
+    }
+  };
+
+  const submitReason = async () => {
+    const trimmedReason = reason.trim();
+    if (!dialog || !trimmedReason) {
+      setDialogError('Enter a reason to continue.');
+      return;
+    }
+    setIsSubmitting(true);
+    setDialogError('');
+    try {
+      if (dialog.action === 'REJECT_DRIVER') {
+        await rejectDriver(dialog.driver.userId, trimmedReason);
+      } else if (dialog.action === 'SUSPEND_DRIVER') {
+        await suspendDriver(dialog.driver.userId, trimmedReason);
+      } else if (dialog.documentId) {
+        await reviewDriverDocumentApi(dialog.driver.userId, dialog.documentId, 'REJECTED', trimmedReason);
+      }
+      await fetchDrivers();
+      setDialog(null);
+    } catch (error) {
+      setDialogError(error instanceof Error ? error.message : 'Unable to save this review.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -129,6 +168,14 @@ export default function AdminDriversScreen() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
+        {loadError ? (
+          <Pressable onPress={() => {
+            setLoadError('');
+            void fetchDrivers().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : 'Unable to load drivers.'));
+          }} style={styles.loadError}>
+            <Text style={styles.loadErrorText}>{loadError} · Tap to retry</Text>
+          </Pressable>
+        ) : null}
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Driver Verification</Text>
@@ -189,6 +236,15 @@ export default function AdminDriversScreen() {
           </Pressable>
 
           <Pressable
+            style={[styles.tab, activeTab === 'REJECTED' && styles.tabActive]}
+            onPress={() => setActiveTab('REJECTED')}
+          >
+            <Text style={[styles.tabText, activeTab === 'REJECTED' && styles.tabTextActive]}>
+              Rejected
+            </Text>
+          </Pressable>
+
+          <Pressable
             style={[styles.tab, activeTab === 'ALL' && styles.tabActive]}
             onPress={() => setActiveTab('ALL')}
           >
@@ -215,6 +271,8 @@ export default function AdminDriversScreen() {
               driver.verificationStatus === DriverVerificationStatus.PENDING_VERIFICATION;
             const isVerified =
               driver.verificationStatus === DriverVerificationStatus.VERIFIED;
+            const isRejected =
+              driver.verificationStatus === DriverVerificationStatus.REJECTED;
 
             return (
               <View key={driver.id} style={styles.driverCard}>
@@ -279,8 +337,45 @@ export default function AdminDriversScreen() {
 
                 <View style={styles.locationFooter}>
                   <Ionicons name="location-outline" size={14} color="#8E8E93" />
-                  <Text style={styles.locationText}>{driver.island}</Text>
+                  <Text style={styles.locationText}>{driver.island || 'Island not provided'}</Text>
                   <Text style={styles.appliedDate}>Applied: {driver.appliedDate}</Text>
+                </View>
+
+                <View style={styles.reviewDetails}>
+                  <Text style={styles.reviewDetailsText}>
+                    Experience: {driver.yearsExperience == null ? 'Not provided' : `${driver.yearsExperience} years`} · Licence expires: {driver.licenceExpiry || 'Not provided'}
+                  </Text>
+                  {driver.rejectionReason ? (
+                    <Text style={styles.reviewReasonText}>Rejection reason: {driver.rejectionReason}</Text>
+                  ) : null}
+                  {driver.suspensionReason ? (
+                    <Text style={styles.reviewReasonText}>Suspension reason: {driver.suspensionReason}</Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.documentsPanel}>
+                  <Text style={styles.documentsHeading}>Submitted documents</Text>
+                  {driver.documents.length === 0 ? (
+                    <Text style={styles.documentEmpty}>No documents submitted. Verification is blocked until a licence and vehicle registration are reviewed.</Text>
+                  ) : driver.documents.map((document) => (
+                    <View key={document.id} style={styles.documentRow}>
+                      <Pressable onPress={() => void openDocument(driver, document.id)} style={styles.documentLink}>
+                        <Text style={styles.documentLinkText}>{document.type.replace('_', ' ')} · {document.filename}</Text>
+                      </Pressable>
+                      <Text style={styles.documentStatus}>{document.status}</Text>
+                      {document.status === 'PENDING' ? (
+                        <>
+                          <Pressable onPress={() => void handleReviewDocument(driver, document.id, 'APPROVED')}>
+                            <Text style={styles.documentApprove}>Approve</Text>
+                          </Pressable>
+                          <Pressable onPress={() => handleReviewDocument(driver, document.id, 'REJECTED')}>
+                            <Text style={styles.documentReject}>Reject</Text>
+                          </Pressable>
+                        </>
+                      ) : null}
+                      {document.reviewReason ? <Text style={styles.documentReason}>{document.reviewReason}</Text> : null}
+                    </View>
+                  ))}
                 </View>
 
                 {/* Actions */}
@@ -310,12 +405,14 @@ export default function AdminDriversScreen() {
                       <Ionicons name="ban-outline" size={15} color="#FF3B30" />
                       <Text style={styles.suspendButtonText}>Suspend Licence</Text>
                     </Pressable>
+                  ) : isRejected ? (
+                    <Text style={styles.rejectedNotice}>Waiting for replacement documents from the driver.</Text>
                   ) : (
                     <Pressable
                       style={styles.acceptButton}
                       onPress={() => {
                         void verifyDriver(driver.userId).catch(() => {
-                          Alert.alert('Error', 'Unable to reactivate this driver right now.');
+                          showAdminMessage('Error', 'Unable to reactivate this driver right now.');
                         });
                       }}
                     >
@@ -329,6 +426,43 @@ export default function AdminDriversScreen() {
           })
         )}
       </ScrollView>
+
+      <Modal
+        visible={dialog !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDialog(null)}
+      >
+        <View style={styles.dialogBackdrop}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogTitle}>
+              {dialog?.action === 'SUSPEND_DRIVER' ? 'Suspend driver' : dialog?.action === 'REJECT_DOCUMENT' ? 'Reject document' : 'Reject driver application'}
+            </Text>
+            <Text style={styles.dialogSubtitle}>
+              Provide a reason. It will be saved with the review record.
+            </Text>
+            <TextInput
+              style={styles.reasonInput}
+              multiline
+              value={reason}
+              onChangeText={setReason}
+              placeholder="Explain what needs attention"
+              maxLength={500}
+            />
+            {dialogError ? <Text style={styles.dialogError}>{dialogError}</Text> : null}
+            <View style={styles.dialogActions}>
+              <Pressable disabled={isSubmitting} onPress={() => setDialog(null)} style={styles.dialogCancel}>
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable disabled={isSubmitting} onPress={() => void submitReason()} style={styles.dialogConfirm}>
+                {isSubmitting
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <Text style={styles.dialogConfirmText}>Save review</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -336,7 +470,7 @@ export default function AdminDriversScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: 'transparent' },
   scroll: { flex: 1 },
-  container: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 40 },
+  container: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 50, width: '100%', maxWidth: 1180, alignSelf: 'center' },
   header: { marginBottom: 16 },
   title: { fontSize: 24, fontWeight: '800', color: '#1C1C1E' },
   subtitle: { fontSize: 13, color: '#636366', marginTop: 3 },
@@ -385,6 +519,8 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   tabBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+  loadError: { backgroundColor: '#FFF1F0', padding: 14, borderRadius: 10, marginBottom: 12 },
+  loadErrorText: { color: '#B42318', fontWeight: '600' },
 
   emptyContainer: {
     backgroundColor: '#FFFFFF',
@@ -468,6 +604,31 @@ const styles = StyleSheet.create({
     borderTopColor: '#F2F2F7',
     paddingTop: 12,
   },
+  reviewDetails: { backgroundColor: '#F9F9FB', borderRadius: 10, padding: 10, marginBottom: 12, gap: 5 },
+  reviewDetailsText: { color: '#475467', fontSize: 12 },
+  reviewReasonText: { color: '#B42318', fontSize: 12 },
+  documentsPanel: { borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 12, padding: 12, marginBottom: 12 },
+  documentsHeading: { color: '#1C1C1E', fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  documentEmpty: { color: '#667085', fontSize: 12, lineHeight: 18 },
+  documentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10, borderTopWidth: 1, borderTopColor: '#F2F2F7', paddingVertical: 9 },
+  documentLink: { flex: 1, minWidth: 180 },
+  documentLinkText: { color: '#0A84FF', fontSize: 12, fontWeight: '600' },
+  documentStatus: { color: '#667085', fontSize: 11, fontWeight: '700' },
+  documentApprove: { color: '#16803C', fontWeight: '700', fontSize: 12 },
+  documentReject: { color: '#B42318', fontWeight: '700', fontSize: 12 },
+  documentReason: { width: '100%', color: '#B42318', fontSize: 12 },
+  rejectedNotice: { color: '#B42318', fontSize: 12, paddingVertical: 8 },
+  dialogBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  dialogCard: { width: '100%', maxWidth: 480, backgroundColor: '#FFFFFF', borderRadius: 18, padding: 24, gap: 12 },
+  dialogTitle: { fontSize: 20, fontWeight: '800', color: '#1C1C1E' },
+  dialogSubtitle: { color: '#667085', lineHeight: 20 },
+  reasonInput: { minHeight: 110, textAlignVertical: 'top', borderWidth: 1, borderColor: '#D0D5DD', borderRadius: 10, padding: 12, color: '#1C1C1E' },
+  dialogError: { color: '#B42318', fontSize: 13 },
+  dialogActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  dialogCancel: { paddingVertical: 10, paddingHorizontal: 16 },
+  dialogCancelText: { color: '#344054', fontWeight: '700' },
+  dialogConfirm: { backgroundColor: '#B42318', minWidth: 110, alignItems: 'center', justifyContent: 'center', borderRadius: 9, paddingVertical: 10, paddingHorizontal: 16 },
+  dialogConfirmText: { color: '#FFFFFF', fontWeight: '700' },
   acceptButton: {
     flex: 1,
     backgroundColor: '#34C759',

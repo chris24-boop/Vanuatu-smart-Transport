@@ -33,6 +33,7 @@ import {
   createIncidentApi,
   listIncidentsApi,
   rateBookingApi,
+  updateIncidentStatusApi,
   CreateIncidentPayload,
 } from '@/api/incidents';
 import { offlineCache } from '@/utils/offlineCache';
@@ -71,12 +72,13 @@ interface TransportState {
   // Incidents
   reportIncident: (input: CreateIncidentPayload) => Promise<IncidentItem>;
   fetchIncidents: (status?: string) => Promise<void>;
+  updateIncidentStatus: (id: string, status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED') => Promise<void>;
 
   // Driver actions (Admin)
   fetchDrivers: () => Promise<void>;
   verifyDriver: (id: string) => Promise<void>;
   rejectDriver: (id: string, reason?: string) => Promise<void>;
-  suspendDriver: (id: string) => Promise<void>;
+  suspendDriver: (id: string, reason: string) => Promise<void>;
 
   // UI state
   setActiveFilterVehicle: (vehicle: string) => void;
@@ -289,6 +291,21 @@ export const useTransportStore = create<TransportState>((set, get) => ({
       set({ incidents });
     } catch (error) {
       console.error('Failed to fetch incidents:', error);
+      throw error;
+    }
+  },
+
+  updateIncidentStatus: async (id, status) => {
+    try {
+      const updated = await updateIncidentStatusApi(id, status);
+      set((state) => ({
+        incidents: state.incidents.map((incident) =>
+          incident.id === id ? { ...incident, status: updated.status } : incident,
+        ),
+      }));
+    } catch (error) {
+      console.error('Failed to update incident status:', error);
+      throw error;
     }
   },
 
@@ -298,6 +315,7 @@ export const useTransportStore = create<TransportState>((set, get) => ({
       set({ drivers });
     } catch (error) {
       console.error('Failed to fetch drivers:', error);
+      throw error;
     }
   },
 
@@ -331,7 +349,7 @@ export const useTransportStore = create<TransportState>((set, get) => ({
       set((state) => ({
         drivers: state.drivers.map((d) =>
           d.userId === id
-            ? { ...d, verificationStatus: DriverVerificationStatus.SUSPENDED }
+            ? { ...d, verificationStatus: DriverVerificationStatus.REJECTED, rejectionReason: reason ?? '' }
             : d,
         ),
       }));
@@ -341,13 +359,13 @@ export const useTransportStore = create<TransportState>((set, get) => ({
     }
   },
 
-  suspendDriver: async (id) => {
+  suspendDriver: async (id, reason) => {
     if (!id.trim()) {
       throw new Error('Missing driver user ID. Refresh the driver list and try again.');
     }
 
     try {
-      await suspendDriverApi(id);
+      await suspendDriverApi(id, reason);
       set((state) => ({
         drivers: state.drivers.map((d) =>
           d.userId === id

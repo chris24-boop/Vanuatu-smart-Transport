@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsEmail, IsIn, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @IsString()
@@ -27,6 +27,15 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   licenceNumber?: string;
+
+  @IsOptional()
+  @IsDateString()
+  licenceExpiry?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  yearsExperience?: number;
 
   @IsOptional()
   @IsString()

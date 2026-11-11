@@ -1,22 +1,25 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Modal, ActivityIndicator, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTransportStore } from '@/store/transportStore';
-import { useAuthStore } from '@/store/authStore';
 import { DriverVerificationStatus } from '@/types/user';
 import VanuatuScreenBackground from '@/components/VanuatuScreenBackground';
+import Svg, { Circle, Path, Text as SvgText } from 'react-native-svg';
+import { AdminActivityItem, LiveTripLocation } from '@/types/transport';
+import { listAdminActivityApi, listLiveOperationsApi } from '@/api/admin';
+import { confirmAdminAction, showAdminMessage } from '@/utils/adminDialogs';
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
   const {
     trips,
     drivers,
     availableServices,
     incidents,
     verifyDriver,
+    updateIncidentStatus,
     fetchTrips,
     fetchDrivers,
     fetchAvailableServices,
@@ -24,12 +27,44 @@ export default function AdminDashboardScreen() {
   } = useTransportStore();
 
   const [incidentsModalVisible, setIncidentsModalVisible] = useState(false);
+  const [liveLocations, setLiveLocations] = useState<LiveTripLocation[]>([]);
+  const [activity, setActivity] = useState<AdminActivityItem[]>([]);
+  const [operationsError, setOperationsError] = useState('');
+  const [activityError, setActivityError] = useState('');
+  const [updatingIncidentId, setUpdatingIncidentId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
 
   useEffect(() => {
     void fetchTrips().catch((error) => console.error('Failed to fetch trips:', error));
     void fetchDrivers().catch((error) => console.error('Failed to fetch drivers:', error));
-    void fetchAvailableServices();
-    void fetchIncidents();
+    void fetchAvailableServices().catch((error) => console.error('Failed to fetch available services:', error));
+    void fetchIncidents().catch((error) => console.error('Failed to fetch incidents:', error));
+    let active = true;
+    const refreshLiveLocations = async () => {
+      try {
+        const locations = await listLiveOperationsApi();
+        if (active) {
+          setLiveLocations(locations);
+          setCurrentTime(Date.now());
+          setOperationsError('');
+        }
+      } catch (error) {
+        if (active) setOperationsError(error instanceof Error ? error.message : 'Unable to load live locations.');
+      }
+    };
+    void refreshLiveLocations();
+    const interval = setInterval(() => void refreshLiveLocations(), 15_000);
+    void listAdminActivityApi()
+      .then((entries) => {
+        if (active) setActivity(entries);
+      })
+      .catch((error: unknown) => {
+        if (active) setActivityError(error instanceof Error ? error.message : 'Unable to load the audit log.');
+      });
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [fetchTrips, fetchDrivers, fetchAvailableServices, fetchIncidents]);
 
   const pendingDrivers = drivers.filter(
@@ -39,6 +74,17 @@ export default function AdminDashboardScreen() {
     (d) => d.verificationStatus === DriverVerificationStatus.VERIFIED
   );
   const activeTrips = trips.filter((t) => t.status === 'ACTIVE' || t.status === 'PLANNED');
+  const recordIncidentStatus = async (id: string, status: 'INVESTIGATING' | 'RESOLVED' | 'OPEN') => {
+    setUpdatingIncidentId(id);
+    try {
+      await updateIncidentStatus(id, status);
+      await fetchIncidents();
+    } catch (error) {
+      showAdminMessage('Could not update incident', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setUpdatingIncidentId(null);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -138,21 +184,103 @@ export default function AdminDashboardScreen() {
             <Text style={styles.statSublabel}>Safety, fares & complaints</Text>
           </Pressable>
         </View>
-        <Pressable
-          style={styles.touristServicesBanner}
-          onPress={() => router.push('/tourist/manage')}
-        >
-          <View style={styles.touristServicesIcon}>
-            <Ionicons name="compass-outline" size={22} color="#0D705B" />
+        <View style={styles.operationsCard}>
+          <View style={styles.operationsHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Live operations</Text>
+              <Text style={styles.sectionSubtitle}>Active trips with recently shared driver locations</Text>
+            </View>
+            <Pressable
+              onPress={() => void listLiveOperationsApi().then((locations) => {
+                setLiveLocations(locations);
+                setOperationsError('');
+              }).catch((error: unknown) => setOperationsError(error instanceof Error ? error.message : 'Unable to refresh live locations.'))}
+            >
+              <Text style={styles.viewAllLink}>Refresh</Text>
+            </Pressable>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.touristServicesTitle}>Tourist destinations</Text>
-            <Text style={styles.touristServicesSubtitle}>
-              Manage destination information for tourist transport.
-            </Text>
+          {operationsError ? <Text style={styles.inlineError}>{operationsError}</Text> : null}
+          {liveLocations.length === 0 ? (
+            <View style={styles.noLiveTrips}>
+              <Ionicons name="navigate-outline" size={24} color="#667085" />
+              <Text style={styles.noLiveTripsText}>No active trip is currently sharing a GPS location.</Text>
+            </View>
+          ) : (
+            <View style={styles.operationsContent}>
+              <Svg width="100%" height={280} viewBox="0 0 1000 550" style={styles.map}>
+                <Path d="M170 140 Q205 115 252 126 L276 153 Q252 188 214 195 L184 177 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <Path d="M266 218 Q286 199 314 211 L322 236 Q304 259 277 253 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <Path d="M442 224 Q457 213 471 224 L466 242 Q452 248 442 224 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <Path d="M452 187 L466 170 L478 190 L470 212 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <Path d="M468 146 L479 127 L492 148 L480 165 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <Path d="M497 321 Q516 306 541 320 L548 342 Q527 357 507 349 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <Path d="M785 459 Q803 439 824 456 L817 484 L798 494 Z" fill="#A8D8B9" stroke="#61A77A" strokeWidth="4" />
+                <SvgText x="195" y="215" fill="#475467" fontSize="18">Santo</SvgText>
+                <SvgText x="494" y="384" fill="#475467" fontSize="18">Efate</SvgText>
+                <SvgText x="772" y="520" fill="#475467" fontSize="18">Tanna</SvgText>
+                {liveLocations.map((location) => {
+                  const x = Math.max(12, Math.min(988, ((location.longitude - 166.5) / 4) * 1000));
+                  const y = Math.max(12, Math.min(538, ((-13 - location.latitude) / 7.5) * 550));
+                  const isFresh = location.updatedAt !== null && currentTime - new Date(location.updatedAt).getTime() < 60_000;
+                  return (
+                    <Circle
+                      key={location.id}
+                      cx={x}
+                      cy={y}
+                      r={isFresh ? 14 : 11}
+                      fill={isFresh ? '#12B76A' : '#F79009'}
+                      stroke="#FFFFFF"
+                      strokeWidth="5"
+                      onPress={() => void Linking.openURL(`https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=14/${location.latitude}/${location.longitude}`)}
+                    />
+                  );
+                })}
+              </Svg>
+              <View style={styles.liveTripList}>
+                {liveLocations.map((location) => {
+                  const isFresh = location.updatedAt !== null && currentTime - new Date(location.updatedAt).getTime() < 60_000;
+                  return (
+                    <Pressable
+                      key={location.id}
+                      style={styles.liveTripRow}
+                      onPress={() => void Linking.openURL(`https://www.openstreetmap.org/?mlat=${location.latitude}&mlon=${location.longitude}#map=14/${location.latitude}/${location.longitude}`)}
+                    >
+                      <View style={[styles.liveDot, { backgroundColor: isFresh ? '#12B76A' : '#F79009' }]} />
+                      <View style={styles.liveTripDetails}>
+                        <Text style={styles.liveTripTitle}>{location.origin} to {location.destination}</Text>
+                        <Text style={styles.liveTripSubtitle}>{location.driverName} · {location.vehiclePlate}</Text>
+                      </View>
+                      <Text style={styles.liveTripTimestamp}>
+                        {location.updatedAt ? new Date(location.updatedAt).toLocaleTimeString() : 'No timestamp'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+          <Text style={styles.mapNote}>Schematic island view. Select a trip to open its coordinates in OpenStreetMap.</Text>
+        </View>
+
+        <View style={styles.operationsCard}>
+          <View style={styles.operationsHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Admin activity</Text>
+              <Text style={styles.sectionSubtitle}>Recent driver and incident decisions</Text>
+            </View>
           </View>
-          <Ionicons name="chevron-forward" size={19} color="#0D705B" />
-        </Pressable>
+          {activityError ? <Text style={styles.inlineError}>{activityError}</Text> : null}
+          {activity.length === 0 && !activityError ? <Text style={styles.emptyText}>No administrative actions have been recorded yet.</Text> : null}
+          {activity.slice(0, 8).map((entry) => (
+            <View key={entry.id} style={styles.activityRow}>
+              <Ionicons name="shield-checkmark-outline" size={17} color="#0A84FF" />
+              <View style={styles.activityDetails}>
+                <Text style={styles.activityTitle}>{entry.action.replaceAll('_', ' ')}</Text>
+                <Text style={styles.activitySubtitle}>{entry.actorName} · {new Date(entry.createdAt).toLocaleString()}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Driver Registration Requests</Text>
@@ -196,11 +324,13 @@ export default function AdminDashboardScreen() {
                 <Pressable
                   style={styles.verifyBtn}
                   onPress={async () => {
+                    if (!(await confirmAdminAction('Verify driver', `Approve ${driver.fullName}?`))) return;
                     try {
                       await verifyDriver(driver.userId);
-                      Alert.alert('Driver Approved', `${driver.fullName} is now verified to drive.`);
+                      await fetchDrivers();
+                      showAdminMessage('Driver approved', `${driver.fullName} is now verified to drive.`);
                     } catch (error) {
-                      Alert.alert('Approval Failed', error instanceof Error ? error.message : 'Unable to approve this driver right now.');
+                      showAdminMessage('Approval failed', error instanceof Error ? error.message : 'Unable to approve this driver right now.');
                     }
                   }}
                 >
@@ -307,6 +437,36 @@ export default function AdminDashboardScreen() {
                     {item.driverName !== 'N/A' && (
                       <Text style={styles.incidentMetaSub}>Driver: {item.driverName}</Text>
                     )}
+                    <View style={styles.incidentActions}>
+                      {item.status === 'OPEN' ? (
+                        <Pressable
+                          disabled={updatingIncidentId === item.id}
+                          onPress={() => void recordIncidentStatus(item.id, 'INVESTIGATING')}
+                          style={styles.incidentAction}
+                        >
+                          <Text style={styles.incidentActionText}>Mark investigating</Text>
+                        </Pressable>
+                      ) : null}
+                      {item.status !== 'RESOLVED' ? (
+                        <Pressable
+                          disabled={updatingIncidentId === item.id}
+                          onPress={() => void recordIncidentStatus(item.id, 'RESOLVED')}
+                          style={[styles.incidentAction, styles.resolveAction]}
+                        >
+                          {updatingIncidentId === item.id
+                            ? <ActivityIndicator size="small" color="#FFFFFF" />
+                            : <Text style={styles.resolveActionText}>Resolve</Text>}
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          disabled={updatingIncidentId === item.id}
+                          onPress={() => void recordIncidentStatus(item.id, 'OPEN')}
+                          style={styles.incidentAction}
+                        >
+                          <Text style={styles.incidentActionText}>Reopen</Text>
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
                 ))
               )}
@@ -416,9 +576,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#8E8E93',
   },
+  incidentActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
+  incidentAction: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: '#D0D5DD' },
+  incidentActionText: { color: '#344054', fontSize: 12, fontWeight: '700' },
+  resolveAction: { backgroundColor: '#16803C', borderColor: '#16803C', minWidth: 78, alignItems: 'center' },
+  resolveActionText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   safe: { flex: 1, backgroundColor: 'transparent' },
   scroll: { flex: 1 },
-  container: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 40 },
+  container: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 50, width: '100%', maxWidth: 1240, alignSelf: 'center' },
   header: { marginBottom: 20 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   adminBadge: {
@@ -440,28 +605,6 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 20,
   },
-  touristServicesBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 11,
-    marginTop: 14,
-    marginBottom: 6,
-    padding: 14,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#D3E7DE',
-    backgroundColor: '#FFFFFF',
-  },
-  touristServicesIcon: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: '#E7F4EE',
-  },
-  touristServicesTitle: { color: '#173D33', fontSize: 14, fontWeight: '700' },
-  touristServicesSubtitle: { marginTop: 3, color: '#687871', fontSize: 11, lineHeight: 16 },
   statCard: {
     width: '48%',
     backgroundColor: '#FFFFFF',
@@ -512,6 +655,25 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#1C1C1E' },
   sectionSubtitle: { fontSize: 12, color: '#8E8E93', marginTop: 1 },
   viewAllLink: { fontSize: 13, fontWeight: '600', color: '#0A84FF' },
+  operationsCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#E5E5EA' },
+  operationsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  operationsContent: { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },
+  map: { flexGrow: 1, minWidth: 320, maxWidth: 650, borderRadius: 14, backgroundColor: '#EAF3FF' },
+  noLiveTrips: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#F9FAFB', borderRadius: 12 },
+  noLiveTripsText: { color: '#667085', fontSize: 13, textAlign: 'center', paddingHorizontal: 14 },
+  liveTripList: { flex: 1, minWidth: 260 },
+  liveTripRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
+  liveDot: { width: 10, height: 10, borderRadius: 5 },
+  liveTripDetails: { flex: 1 },
+  liveTripTitle: { color: '#101828', fontSize: 12, fontWeight: '700' },
+  liveTripSubtitle: { color: '#667085', fontSize: 11, marginTop: 3 },
+  liveTripTimestamp: { color: '#667085', fontSize: 10 },
+  mapNote: { color: '#98A2B3', fontSize: 11, marginTop: 12 },
+  inlineError: { color: '#B42318', fontSize: 12, marginBottom: 10 },
+  activityRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderTopColor: '#EAECF0', paddingVertical: 11 },
+  activityDetails: { flex: 1 },
+  activityTitle: { color: '#101828', fontSize: 12, fontWeight: '700' },
+  activitySubtitle: { color: '#667085', fontSize: 11, marginTop: 3 },
 
   emptyCard: {
     backgroundColor: '#FFFFFF',

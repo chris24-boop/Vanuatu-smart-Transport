@@ -76,6 +76,9 @@ export class AuthService {
           driver: assignedRole === 'DRIVER' ? {
             create: {
               licenceNumber: data.licenceNumber?.trim() || null,
+              licenceExpiry: data.licenceExpiry ? new Date(data.licenceExpiry) : null,
+              yearsExperience: data.yearsExperience ?? null,
+              island: data.island?.trim() || null,
               verificationStatus: 'PENDING_VERIFICATION',
             },
           } : undefined,
@@ -90,7 +93,22 @@ export class AuthService {
           } : undefined,
         },
         include: {
-          driver: true,
+          driver: {
+            include: {
+              documents: {
+                select: {
+                  id: true,
+                  type: true,
+                  filename: true,
+                  mimeType: true,
+                  status: true,
+                  reviewReason: true,
+                  reviewedAt: true,
+                  createdAt: true,
+                },
+              },
+            },
+          },
           vehicles: true,
         },
       });
@@ -123,7 +141,22 @@ export class AuthService {
         email,
       },
       include: {
-        driver: true,
+        driver: {
+          include: {
+            documents: {
+              select: {
+                id: true,
+                type: true,
+                filename: true,
+                mimeType: true,
+                status: true,
+                reviewReason: true,
+                reviewedAt: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
         vehicles: true,
       },
     });
@@ -141,7 +174,22 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
-        driver: true,
+        driver: {
+          include: {
+            documents: {
+              select: {
+                id: true,
+                type: true,
+                filename: true,
+                mimeType: true,
+                status: true,
+                reviewReason: true,
+                reviewedAt: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
         vehicles: true,
       },
     });
@@ -166,8 +214,13 @@ export class AuthService {
       email: user.email ?? '',
       role: user.role,
       driverVerificationStatus: user.driver?.verificationStatus ?? null,
+      driverRejectionReason: user.driver?.rejectionReason ?? null,
       driverAvailability: user.driver?.availability ?? 'NOT_AVAILABLE',
       licenceNumber: user.driver?.licenceNumber ?? null,
+      licenceExpiry: user.driver?.licenceExpiry?.toISOString() ?? null,
+      yearsExperience: user.driver?.yearsExperience ?? null,
+      island: user.driver?.island ?? null,
+      driverDocuments: user.driver?.documents ?? [],
       vehiclePlate: v?.registrationNumber ?? null,
       vehicleType: vehicleTypeDisplay ?? null,
       vehicleModel: v?.model ?? null,
@@ -373,7 +426,25 @@ export class AuthService {
     lastName: string;
     phone: string;
     email: string | null;
-    driver?: { verificationStatus?: string | null; licenceNumber?: string | null; availability?: string | null } | null;
+    driver?: {
+      verificationStatus?: string | null;
+      licenceNumber?: string | null;
+      availability?: string | null;
+      licenceExpiry?: Date | null;
+      yearsExperience?: number | null;
+      island?: string | null;
+      rejectionReason?: string | null;
+      documents?: Array<{
+        id: string;
+        type: string;
+        filename: string;
+        mimeType: string;
+        status: string;
+        reviewReason: string | null;
+        reviewedAt: Date | null;
+        createdAt: Date;
+      }>;
+    } | null;
     vehicles?: Array<{ registrationNumber?: string; vehicleType?: string; model?: string | null }> | null;
   }, saveRefreshToken: (data: {
     id: string;
@@ -417,8 +488,13 @@ export class AuthService {
         email: user.email ?? '',
         role: user.role,
         driverVerificationStatus: user.driver?.verificationStatus ?? null,
+        driverRejectionReason: user.driver?.rejectionReason ?? null,
         driverAvailability: user.driver?.availability ?? 'NOT_AVAILABLE',
         licenceNumber: user.driver?.licenceNumber ?? null,
+        licenceExpiry: user.driver?.licenceExpiry?.toISOString() ?? null,
+        yearsExperience: user.driver?.yearsExperience ?? null,
+        island: user.driver?.island ?? null,
+        driverDocuments: user.driver?.documents ?? [],
         vehiclePlate: v?.registrationNumber ?? null,
         vehicleType: vehicleTypeDisplay ?? null,
         vehicleModel: v?.model ?? null,
