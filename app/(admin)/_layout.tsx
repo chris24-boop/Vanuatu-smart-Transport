@@ -63,7 +63,7 @@ export default function AdminLayout() {
             <MaterialCommunityIcons
               name={focused ? 'view-dashboard' : 'view-dashboard-outline'}
               size={22}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
@@ -79,7 +79,7 @@ export default function AdminLayout() {
             <Ionicons
               name={focused ? 'people' : 'people-outline'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
@@ -93,7 +93,7 @@ export default function AdminLayout() {
             <Ionicons
               name={focused ? 'map' : 'map-outline'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}

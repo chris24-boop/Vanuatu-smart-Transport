@@ -34,7 +34,11 @@
         {
           "locationWhenInUsePermission": "Allow Vanuatu Smart Transport to share your location during an active trip."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

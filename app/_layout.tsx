@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { StyleSheet, View } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
 import StartupSplashScreen from '@/components/SplashScreen';
 
@@ -77,9 +78,7 @@ export default function RootLayout() {
     <View style={styles.container}>
       <StatusBar
         animated
-        barStyle={isDarkAuthScreen ? 'light-content' : 'dark-content'}
-        backgroundColor={isDarkAuthScreen ? '#087F86' : '#F8FBF9'}
-        translucent={false}
+        style={isDarkAuthScreen ? 'light' : 'dark'}
       />
       <Stack screenOptions={{ headerShown: false }} />
       {(isLoading || !hasMinimumSplashDurationElapsed) && (

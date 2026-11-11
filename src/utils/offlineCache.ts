@@ -17,6 +17,16 @@ const USER_SCOPE_KEY = 'cache_user_scope_v1';
 
 let activeUserId: string | null = null;
 
+function secureStoreKey(key: string): string {
+  if (/^[A-Za-z0-9._-]+$/.test(key)) return key;
+
+  return key
+    .replace(/_/g, '_5f_')
+    .replace(/[^A-Za-z0-9.-]/g, (character) =>
+      `_x${character.charCodeAt(0).toString(16)}_`,
+    );
+}
+
 function scopedKey(key: string): string | null {
   return activeUserId ? `${key}:${encodeURIComponent(activeUserId)}` : null;
 }
@@ -26,7 +36,7 @@ async function writeStorage(key: string, value: string): Promise<void> {
     if (Platform.OS === 'web') {
       localStorage.setItem(key, value);
     } else {
-      await SecureStore.setItemAsync(key, value);
+      await SecureStore.setItemAsync(secureStoreKey(key), value);
     }
   } catch (error) {
     console.warn(`[OfflineCache] Failed to write key ${key}:`, error);
@@ -38,7 +48,7 @@ async function removeStorage(key: string): Promise<void> {
     if (Platform.OS === 'web') {
       localStorage.removeItem(key);
     } else {
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(secureStoreKey(key));
     }
   } catch (error) {
     console.warn(`[OfflineCache] Failed to remove key ${key}:`, error);
@@ -62,7 +72,7 @@ async function readStorage(key: string): Promise<string | null> {
     if (Platform.OS === 'web') {
       return localStorage.getItem(key);
     }
-    return await SecureStore.getItemAsync(key);
+    return await SecureStore.getItemAsync(secureStoreKey(key));
   } catch (error) {
     console.warn(`[OfflineCache] Failed to read key ${key}:`, error);
     return null;

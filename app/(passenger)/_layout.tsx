@@ -42,7 +42,7 @@ export default function PassengerLayout() {
             <Ionicons
               name={focused ? 'home' : 'home-outline'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
@@ -57,7 +57,7 @@ export default function PassengerLayout() {
             <Ionicons
               name={focused ? 'person' : 'person-outline'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}

@@ -42,7 +42,7 @@ export default function DriverLayout() {
             <MaterialCommunityIcons
               name={focused ? 'view-dashboard' : 'view-dashboard-outline'}
               size={22}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
@@ -56,7 +56,7 @@ export default function DriverLayout() {
             <AntDesign
               name={focused ? 'car' : 'car'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
@@ -70,7 +70,7 @@ export default function DriverLayout() {
             <Ionicons
               name={focused ? 'time' : 'time-outline'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
@@ -85,7 +85,7 @@ export default function DriverLayout() {
             <Ionicons
               name={focused ? 'person' : 'person-outline'}
               size={size}
-              color={color}
+              color={typeof color === 'string' ? color : '#8E8E93'}
             />
           ),
         }}
